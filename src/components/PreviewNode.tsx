@@ -199,9 +199,13 @@ const PreviewNode = ({ data }: PreviewNodeProps) => {
           )}
         </div>
 
-        {/* Handles */}
-        <Handle type="target" position={Position.Left} className="!w-3 !h-3 !bg-blue-500 !border-2 !border-[#1e1e1e] !-left-1" />
-        <Handle type="source" position={Position.Right} className="!w-3 !h-3 !bg-blue-500 !border-2 !border-[#1e1e1e] !-right-1" />
+        {/* Handles - Only show in desktop mode or if logic requires it */}
+        {!isMobile && (
+          <>
+            <Handle type="target" position={Position.Left} className="!w-3 !h-3 !bg-blue-500 !border-2 !border-[#1e1e1e] !-left-1" />
+            <Handle type="source" position={Position.Right} className="!w-3 !h-3 !bg-blue-500 !border-2 !border-[#1e1e1e] !-right-1" />
+          </>
+        )}
       </div>
     </div>
   );
