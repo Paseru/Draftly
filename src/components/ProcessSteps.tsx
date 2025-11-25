@@ -163,7 +163,7 @@ export default function ProcessSteps({ steps }: ProcessStepsProps) {
           
           if (step.label === 'Thinking' && step.status === 'running') {
              return (
-               <div key={key} className="flex items-center gap-2.5 p-2.5 bg-[#1e1e1e] rounded border border-[#27272a]">
+               <div key={key} className="flex items-center gap-2.5 px-4 py-3 bg-[#1e1e1e] rounded-lg border border-[#27272a]">
                  <div className="shrink-0">
                     <Loader2 size={12} className="text-blue-400 animate-spin" />
                  </div>
@@ -174,7 +174,7 @@ export default function ProcessSteps({ steps }: ProcessStepsProps) {
 
           if (step.id === 'planning' && step.status === 'running' && !parsedDetails) {
              return (
-               <div key={key} className="flex items-center gap-2.5 p-2.5 bg-[#1e1e1e] rounded border border-[#27272a]">
+               <div key={key} className="flex items-center gap-2.5 px-4 py-3 bg-[#1e1e1e] rounded-lg border border-[#27272a]">
                  <div className="shrink-0">
                     <Loader2 size={12} className="text-blue-400 animate-spin" />
                  </div>
