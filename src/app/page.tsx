@@ -1010,8 +1010,9 @@ export default function Home() {
                      <span className="font-semibold text-[15px] tracking-wide pl-1">9:41</span>
                      
                      {/* Dynamic Island */}
-                     <div className="absolute left-1/2 -translate-x-1/2 top-[11px] w-[120px] h-[35px] bg-[#1a1a1a] rounded-[20px] z-50 flex items-center justify-center">
-                        <div className="w-2 h-2 rounded-full bg-[#1a1a40] shadow-[inset_0_0_4px_1px_rgba(60,20,80,0.4)] ml-auto mr-3"></div>
+                     <div className="absolute left-1/2 -translate-x-1/2 top-[11px] w-[120px] h-[35px] bg-[#1a1a1a] rounded-[20px] z-50 flex items-center justify-center gap-5">
+                        <div className="w-2.5 h-2.5 rounded-full bg-[#0a0a0a] shadow-[inset_0_0_2px_1px_rgba(50,20,20,0.5)] opacity-80"></div>
+                        <div className="w-3 h-3 rounded-full bg-[#08081a] shadow-[inset_0_0_4px_2px_rgba(60,70,120,0.6)] ring-[0.5px] ring-white/5"></div>
                      </div>
 
                      <div className="flex items-center gap-2 pr-1">
