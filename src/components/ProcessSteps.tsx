@@ -191,7 +191,7 @@ export default function ProcessSteps({ steps }: ProcessStepsProps) {
               
               {/* Step Header */}
               <div 
-                className={`flex items-center gap-2.5 text-[11px] px-4 py-3 bg-[#202023] border-b border-[#27272a] transition-colors ${hasDetails ? 'cursor-pointer hover:bg-[#27272a]' : ''}`}
+                className={`flex items-center gap-2.5 text-[11px] px-4 py-3 bg-[#202023] transition-colors ${isOpen && hasDetails ? 'border-b border-[#27272a]' : ''} ${hasDetails ? 'cursor-pointer hover:bg-[#27272a]' : ''}`}
                 onClick={() => hasDetails && toggleStep(step.id)}
               >
                 <div className="shrink-0">
