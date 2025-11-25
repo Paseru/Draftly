@@ -1011,7 +1011,7 @@ export default function Home() {
                      
                      {/* Dynamic Island */}
                      <div className="absolute left-1/2 -translate-x-1/2 top-[11px] w-[120px] h-[35px] bg-[#1a1a1a] rounded-[20px] z-50 flex items-center justify-center">
-                        <div className="w-2 h-2 rounded-full bg-[#0f0f0f]/50 ml-auto mr-3"></div>
+                        <div className="w-2 h-2 rounded-full bg-[#1a1a40] shadow-[inset_0_0_4px_1px_rgba(60,20,80,0.4)] ml-auto mr-3"></div>
                      </div>
 
                      <div className="flex items-center gap-2 pr-1">
