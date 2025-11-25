@@ -88,10 +88,7 @@ export default function ClarificationQuestions({ questions, onSubmit, onAutoGene
   const allAnswered = questions.every(q => !!answers[q.id]);
 
   return (
-    <div className={cn(
-      "w-full max-w-xl border rounded-lg overflow-hidden transition-all duration-200",
-      isAnswered ? "bg-[#18181b]/50 border-[#27272a]/50" : "bg-[#18181b] border-[#27272a] shadow-xl"
-    )}>
+    <div className="w-full max-w-xl bg-[#18181b] border border-[#27272a] rounded-lg overflow-hidden transition-all duration-200 shadow-xl">
       <div 
         onClick={() => setIsExpanded(!isExpanded)} 
         className={cn(
