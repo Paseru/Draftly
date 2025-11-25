@@ -997,7 +997,7 @@ export default function Home() {
 
                <div 
                  style={{ width: 430, height: 932 }}
-                 className="relative bg-black rounded-[60px] shadow-[0_0_80px_-20px_rgba(0,0,0,0.5)] border-[12px] border-[#1a1a1a] ring-1 ring-[#333] overflow-hidden select-none"
+                 className="relative bg-black rounded-[60px] shadow-[0_0_80px_-20px_rgba(0,0,0,0.5)] border-[12px] border-[#1a1a1a] ring-1 ring-[#333] overflow-hidden select-none flex flex-col"
                >
                   {/* Hardware Buttons */}
                   <div className="absolute top-[120px] -left-[16px] w-[4px] h-[26px] bg-[#2a2a2a] rounded-l-[2px]"></div>
@@ -1006,7 +1006,7 @@ export default function Home() {
                   <div className="absolute top-[190px] -right-[16px] w-[4px] h-[80px] bg-[#2a2a2a] rounded-r-[2px]"></div>
 
                   {/* Status Bar */}
-                  <div className="absolute top-0 left-0 w-full h-[54px] px-8 flex justify-between items-center pt-3 z-40 text-white pointer-events-none">
+                  <div className="w-full h-[54px] px-8 flex justify-between items-center pt-3 z-40 text-white pointer-events-none bg-black shrink-0">
                      <span className="font-semibold text-[15px] tracking-wide">9:41</span>
                      <div className="flex items-center gap-2">
                         <svg width="18" height="12" viewBox="0 0 18 12" fill="currentColor" className="opacity-90">
@@ -1018,7 +1018,7 @@ export default function Home() {
 
                   <iframe 
                     srcDoc={modalHtml || ''}
-                    className="w-full h-full border-none bg-[#09090b]"
+                    className="flex-1 w-full border-none bg-[#09090b]"
                     title="Preview"
                     sandbox="allow-scripts"
                   />
