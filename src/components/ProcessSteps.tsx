@@ -187,11 +187,11 @@ export default function ProcessSteps({ steps }: ProcessStepsProps) {
           const isOpen = openStepIds.has(step.id) || step.status === 'running';
 
           return (
-            <div key={key} className="flex flex-col bg-[#1e1e1e] rounded border border-[#27272a] overflow-hidden transition-all">
+            <div key={key} className="flex flex-col bg-[#18181b] rounded-lg border border-[#27272a] overflow-hidden transition-all shadow-sm">
               
               {/* Step Header */}
               <div 
-                className={`flex items-center gap-2.5 text-[11px] p-2.5 transition-colors ${hasDetails ? 'cursor-pointer hover:bg-[#252526]' : ''}`}
+                className={`flex items-center gap-2.5 text-[11px] px-4 py-3 bg-[#202023] border-b border-[#27272a] transition-colors ${hasDetails ? 'cursor-pointer hover:bg-[#27272a]' : ''}`}
                 onClick={() => hasDetails && toggleStep(step.id)}
               >
                 <div className="shrink-0">
@@ -204,14 +204,14 @@ export default function ProcessSteps({ steps }: ProcessStepsProps) {
 
                 {hasDetails && (
                   <div className="text-zinc-600">
-                    {isOpen ? <ChevronDown size={10} /> : <ChevronRight size={10} />}
+                    {isOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
                   </div>
                 )}
               </div>
 
               {/* Expanded Content */}
               {isOpen && hasDetails && (
-                <div className="px-2 pb-2 pt-0 pl-6 space-y-1">
+                <div className="px-4 py-3 space-y-1 bg-[#18181b]">
                   {/* Sub-steps */}
                   {step.subSteps && step.subSteps.length > 0 && (
                     <div className="border-l border-zinc-800 pl-2 ml-0.5 space-y-0.5">
