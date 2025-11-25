@@ -152,6 +152,8 @@ export default function ProcessSteps({ steps }: ProcessStepsProps) {
     });
   };
 
+  if (!steps || steps.length === 0) return null;
+
   return (
     <div className="w-full">
       <div className="flex flex-col gap-2">
