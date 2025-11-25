@@ -94,7 +94,10 @@ export default function ClarificationQuestions({ questions, onSubmit, onAutoGene
     )}>
       <div 
         onClick={() => setIsExpanded(!isExpanded)} 
-        className="flex items-center justify-between px-4 py-3 bg-[#202023] border-b border-[#27272a] cursor-pointer hover:bg-[#27272a] transition-colors"
+        className={cn(
+          "flex items-center justify-between px-4 py-3 bg-[#202023] transition-colors cursor-pointer hover:bg-[#27272a]",
+          isExpanded && "border-b border-[#27272a]"
+        )}
       >
          <div className="flex items-center gap-2">
            <div className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse" />
