@@ -158,7 +158,7 @@ const AnimatedEdge = ({
             }}
             className="group"
           >
-            <div className="px-3 py-1.5 bg-[#1e1e1e]/90 border border-blue-500/30 rounded-full text-xs font-medium text-blue-200 shadow-[0_0_15px_rgba(59,130,246,0.2)] backdrop-blur-md transition-all duration-300 group-hover:scale-110 group-hover:border-blue-400/50 group-hover:text-white group-hover:shadow-[0_0_20px_rgba(59,130,246,0.4)]">
+            <div className="px-4 py-2 bg-[#1e1e1e]/95 border border-blue-500/30 rounded-lg text-sm font-medium text-blue-200 shadow-[0_0_15px_rgba(59,130,246,0.2)] backdrop-blur-md transition-all duration-300 group-hover:scale-110 group-hover:border-blue-400/50 group-hover:text-white group-hover:shadow-[0_0_20px_rgba(59,130,246,0.4)]">
               {label}
             </div>
           </div>
