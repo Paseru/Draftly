@@ -70,7 +70,7 @@ export default function ThinkingBlock({ content, isComplete = false }: ThinkingB
                <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500"></span>
              </span>
           </div>
-          <TextShimmer className="text-[11px] font-medium uppercase tracking-wider" duration={1}>Thinking</TextShimmer>
+          <TextShimmer className="text-[11px] font-medium tracking-wide" duration={1}>Thinking</TextShimmer>
         </div>
         
         <div className={`text-zinc-500 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`}>
