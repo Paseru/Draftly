@@ -9,6 +9,7 @@ interface PreviewNodeProps {
     onExpand?: (html: string) => void;
     onShowCode?: (html: string) => void;
     viewMode?: 'desktop' | 'mobile';
+    isGenerating?: boolean;
   };
 }
 
@@ -60,8 +61,19 @@ const PreviewNode = ({ data }: PreviewNodeProps) => {
             title={data.label}
             sandbox="allow-scripts allow-same-origin"
           />
+        ) : data.isGenerating ? (
+          <div className="flex-1 bg-[#09090b] flex flex-col items-center justify-center gap-6">
+            <div className="relative">
+              <div className="w-16 h-16 border-4 border-blue-500/20 rounded-full"></div>
+              <div className="absolute inset-0 w-16 h-16 border-4 border-transparent border-t-blue-500 rounded-full animate-spin"></div>
+            </div>
+            <div className="text-center">
+              <p className="text-zinc-400 text-sm font-medium">Generating {data.label}</p>
+              <p className="text-zinc-600 text-xs mt-1">Creating your design...</p>
+            </div>
+          </div>
         ) : (
-          <div className="flex-1 bg-[#09090b] animate-pulse p-8 flex flex-col gap-6">
+          <div className="flex-1 bg-[#09090b] p-8 flex flex-col gap-6 opacity-40">
             {/* Header Skeleton */}
             <div className="w-full h-16 bg-zinc-900 rounded-lg flex items-center px-6 justify-between border border-zinc-800/50">
               <div className="h-6 w-32 bg-zinc-800 rounded"></div>
@@ -92,9 +104,13 @@ const PreviewNode = ({ data }: PreviewNodeProps) => {
           </div>
         )}
 
-        {/* Handles */}
-        <Handle type="target" position={Position.Left} className="!w-3 !h-3 !bg-blue-500 !border-2 !border-[#1e1e1e] !-left-1.5" />
-        <Handle type="source" position={Position.Right} className="!w-3 !h-3 !bg-blue-500 !border-2 !border-[#1e1e1e] !-right-1.5" />
+        {/* Handles - Only show in desktop mode or if logic requires it */}
+        {!isMobile && (
+          <>
+            <Handle type="target" position={Position.Left} className="!w-3 !h-3 !bg-blue-500 !border-2 !border-[#1e1e1e] !-left-1.5" />
+            <Handle type="source" position={Position.Right} className="!w-3 !h-3 !bg-blue-500 !border-2 !border-[#1e1e1e] !-right-1.5" />
+          </>
+        )}
       </div>
     );
   }
@@ -166,8 +182,19 @@ const PreviewNode = ({ data }: PreviewNodeProps) => {
               title={data.label}
               sandbox="allow-scripts allow-same-origin"
             />
+          ) : data.isGenerating ? (
+            <div className="flex-1 w-full bg-[#09090b] flex flex-col items-center justify-center gap-4">
+              <div className="relative">
+                <div className="w-12 h-12 border-3 border-blue-500/20 rounded-full"></div>
+                <div className="absolute inset-0 w-12 h-12 border-3 border-transparent border-t-blue-500 rounded-full animate-spin"></div>
+              </div>
+              <div className="text-center px-6">
+                <p className="text-zinc-400 text-xs font-medium">Generating</p>
+                <p className="text-zinc-500 text-[10px] mt-0.5">{data.label}</p>
+              </div>
+            </div>
           ) : (
-            <div className="flex-1 w-full bg-[#09090b] animate-pulse p-5 pt-4 flex flex-col gap-4">
+            <div className="flex-1 w-full bg-[#09090b] p-5 pt-4 flex flex-col gap-4 opacity-40">
               {/* Mobile Header Skeleton */}
               <div className="h-10 bg-zinc-900 rounded-xl flex items-center px-4 border border-zinc-800/50">
                 <div className="h-4 w-24 bg-zinc-800 rounded"></div>
@@ -198,14 +225,6 @@ const PreviewNode = ({ data }: PreviewNodeProps) => {
             </div>
           )}
         </div>
-
-        {/* Handles - Only show in desktop mode or if logic requires it */}
-        {!isMobile && (
-          <>
-            <Handle type="target" position={Position.Left} className="!w-3 !h-3 !bg-blue-500 !border-2 !border-[#1e1e1e] !-left-1" />
-            <Handle type="source" position={Position.Right} className="!w-3 !h-3 !bg-blue-500 !border-2 !border-[#1e1e1e] !-right-1" />
-          </>
-        )}
       </div>
     </div>
   );

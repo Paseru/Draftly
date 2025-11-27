@@ -1,44 +1,40 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { ChevronDown } from 'lucide-react';
+import { ChevronDown, ChevronRight, CheckCircle2, Loader2, PauseCircle } from 'lucide-react';
 import { TextShimmer } from '@/components/ui/TextShimmer';
 import ReactMarkdown from 'react-markdown';
 
 interface ThinkingBlockProps {
   content: string;
   isComplete?: boolean;
+  isPaused?: boolean;
+  durationSeconds?: number;
 }
 
 function cleanThinkingContent(content: string): string {
   let cleaned = content;
   
-  // Extraire le contenu entre <thinking> tags s'il existe
   const thinkingMatch = cleaned.match(/<thinking>([\s\S]*?)<\/thinking>/);
   if (thinkingMatch) {
     cleaned = thinkingMatch[1];
   }
   
-  // Nettoyer les tags thinking restants
   cleaned = cleaned.replace(/<\/?thinking>/g, '');
-  
-  // Nettoyer les blocs de code JSON
   cleaned = cleaned.replace(/```json[\s\S]*?```/g, '');
   cleaned = cleaned.replace(/```[\s\S]*?```/g, '');
   
   return cleaned.trim();
 }
 
-export default function ThinkingBlock({ content, isComplete = false }: ThinkingBlockProps) {
+export default function ThinkingBlock({ content, isComplete = false, isPaused = false, durationSeconds }: ThinkingBlockProps) {
   const [isOpen, setIsOpen] = useState(true);
   const contentRef = useRef<HTMLDivElement>(null);
 
-  // Auto-close when complete
   useEffect(() => {
-    if (isComplete) {
+    if (isComplete || isPaused) {
       setIsOpen(false);
     }
-  }, [isComplete]);
+  }, [isComplete, isPaused]);
 
-  // Auto-scroll
   useEffect(() => {
     if (isOpen && contentRef.current) {
       contentRef.current.scrollTop = contentRef.current.scrollHeight;
@@ -46,60 +42,76 @@ export default function ThinkingBlock({ content, isComplete = false }: ThinkingB
   }, [content, isOpen]);
 
   const cleanContent = cleanThinkingContent(content);
+  const hasContent = cleanContent.length > 0;
 
-  if (isComplete) return null;
-  if (!cleanContent) return null;
-
-  // Préparer pour markdown
-  const preparedContent = cleanContent
-    .split('\n')
-    .map(line => line.trim())
-    .filter(line => line.length > 0)
-    .join('\n\n');
+  // Don't render only if complete AND no content (edge case)
+  if (isComplete && !hasContent) return null;
 
   return (
-    <div className="w-full">
-      <button 
-        onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center justify-between px-4 py-3 bg-[#202023] border border-[#27272a] rounded-lg transition-all duration-200 w-full max-w-xl cursor-pointer hover:bg-[#27272a]"
+    <div className="bg-[#1e1e1e] rounded-xl border border-[#27272a] overflow-hidden">
+      {/* Header */}
+      <button
+        onClick={() => hasContent && setIsOpen(!isOpen)}
+        className={`w-full flex items-center justify-between px-4 py-3 transition-colors ${hasContent ? 'hover:bg-white/5 cursor-pointer' : 'cursor-default'}`}
       >
         <div className="flex items-center gap-2">
-          <div className="w-3 h-3 flex items-center justify-center">
-             <span className="relative flex h-2 w-2">
-               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
-               <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500"></span>
-             </span>
+          {isComplete ? (
+            <>
+              <CheckCircle2 size={14} className="text-green-500" />
+              <span className="text-xs font-medium text-zinc-500">
+                Thought for {durationSeconds || 0}s
+              </span>
+            </>
+          ) : isPaused ? (
+            <>
+              <PauseCircle size={14} className="text-amber-500" />
+              <span className="text-xs font-medium text-zinc-500">Thinking paused</span>
+            </>
+          ) : (
+            <>
+              <Loader2 size={14} className="text-blue-500 animate-spin" />
+              <TextShimmer className="text-xs font-medium">Thinking...</TextShimmer>
+            </>
+          )}
+        </div>
+        {hasContent && (
+          <div className="text-zinc-500">
+            {isOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
           </div>
-          <TextShimmer className="text-[11px] font-medium tracking-wide" duration={1}>Thinking</TextShimmer>
-        </div>
-        
-        <div className={`text-zinc-500 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`}>
-          <ChevronDown size={14} />
-        </div>
+        )}
       </button>
       
-      {isOpen && cleanContent && (
+      {/* Content - smooth expand/collapse */}
+      {hasContent && (
         <div 
-          ref={contentRef}
-          className="mt-2 p-3 rounded border border-[#27272a] bg-[#18181b] max-h-48 overflow-y-auto text-[11px] text-[#a1a1aa] leading-relaxed shadow-inner max-w-xl"
+          className={`transition-[max-height,opacity] duration-300 ease-in-out overflow-hidden ${
+            isOpen ? 'max-h-[300px] opacity-100' : 'max-h-0 opacity-0'
+          }`}
         >
-          <ReactMarkdown
-            components={{
-              strong: ({ children }) => <span className="font-semibold text-zinc-300">{children}</span>,
-              em: ({ children }) => <span className="italic text-zinc-300">{children}</span>,
-              ul: ({ children }) => <ul className="list-disc pl-4 my-1 space-y-0.5">{children}</ul>,
-              ol: ({ children }) => <ol className="list-decimal pl-4 my-1 space-y-0.5">{children}</ol>,
-              li: ({ children }) => <li className="text-zinc-400">{children}</li>,
-              p: ({ children }) => <p className="my-1 text-zinc-400">{children}</p>,
-              h1: ({ children }) => <h1 className="text-sm font-bold text-zinc-200 mt-2 mb-1">{children}</h1>,
-              h2: ({ children }) => <h2 className="text-xs font-bold text-zinc-200 mt-2 mb-1">{children}</h2>,
-              h3: ({ children }) => <h3 className="text-xs font-semibold text-zinc-300 mt-1.5 mb-0.5">{children}</h3>,
-              code: ({ children }) => <code className="bg-zinc-800 text-zinc-300 rounded px-1 py-0.5 text-[10px]">{children}</code>,
-            }}
+          <div 
+            ref={contentRef}
+            className="px-4 pb-4 overflow-y-auto border-t border-[#27272a]"
+            style={{ maxHeight: isOpen ? '300px' : '0' }}
           >
-            {preparedContent}
-          </ReactMarkdown>
-          <span className="inline-block w-1.5 h-3 ml-1 align-middle bg-blue-500 animate-pulse rounded-sm"/>
+            <div className="text-[11px] text-zinc-400 leading-relaxed pt-3 thinking-content">
+              <ReactMarkdown
+                components={{
+                  strong: ({ children }) => <strong className="text-zinc-200 font-semibold">{children}</strong>,
+                  em: ({ children }) => <em className="text-zinc-300 italic">{children}</em>,
+                  p: ({ children }) => <p className="my-1.5">{children}</p>,
+                  ul: ({ children }) => <ul className="list-disc list-inside my-2 space-y-1">{children}</ul>,
+                  ol: ({ children }) => <ol className="list-decimal list-inside my-2 space-y-1">{children}</ol>,
+                  li: ({ children }) => <li className="text-zinc-400">{children}</li>,
+                  h1: ({ children }) => <h1 className="text-xs font-bold text-zinc-200 mt-3 mb-1">{children}</h1>,
+                  h2: ({ children }) => <h2 className="text-[11px] font-bold text-zinc-200 mt-2 mb-1">{children}</h2>,
+                  h3: ({ children }) => <h3 className="text-[11px] font-semibold text-zinc-300 mt-2 mb-1">{children}</h3>,
+                  code: ({ children }) => <code className="bg-zinc-800 px-1 py-0.5 rounded text-zinc-300 text-[10px]">{children}</code>,
+                }}
+              >
+                {cleanContent}
+              </ReactMarkdown>
+            </div>
+          </div>
         </div>
       )}
     </div>

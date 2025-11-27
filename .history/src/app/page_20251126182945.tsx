@@ -307,19 +307,9 @@ export default function Home() {
                 }
               }
 
-              // Screen start - focus camera and set generating state
+              // Screen start - focus camera
               if (event.type === 'screen_start') {
                 const { screenId } = event.data;
-                
-                // Set isGenerating on the current node
-                setNodes(prev => prev.map(node => ({
-                  ...node,
-                  data: {
-                    ...node.data,
-                    isGenerating: node.id === screenId
-                  }
-                })));
-                
                 const targetNode = nodes.find(n => n.id === screenId);
                 if (targetNode && reactFlowInstance.current) {
                   const currentMode = viewModeRef.current;
@@ -334,24 +324,18 @@ export default function Home() {
               // Code chunk - stream HTML
               if (event.type === 'code_chunk') {
                 const { screenId, content } = event.data;
-                console.log('[Client] code_chunk received:', screenId, content?.length || 0, 'chars');
-                setNodes(prev => {
-                  const updated = prev.map(node => {
-                    if (node.id === screenId) {
-                      const newHtml = (node.data.html || '') + content;
-                      console.log('[Client] Updating node', screenId, 'html length:', newHtml.length);
-                      return {
-                        ...node,
-                        data: {
-                          ...node.data,
-                          html: newHtml
-                        }
-                      };
-                    }
-                    return node;
-                  });
-                  return updated;
-                });
+                setNodes(prev => prev.map(node => {
+                  if (node.id === screenId) {
+                    return {
+                      ...node,
+                      data: {
+                        ...node.data,
+                        html: (node.data.html || '') + content
+                      }
+                    };
+                  }
+                  return node;
+                }));
               }
 
               // Screen complete
@@ -360,15 +344,6 @@ export default function Home() {
                 const screens = plannedScreensRef.current;
                 const completedScreen = screens[screenIndex];
                 const nextScreen = screens[screenIndex + 1];
-                
-                // Clear isGenerating on completed node
-                setNodes(prev => prev.map(node => ({
-                  ...node,
-                  data: {
-                    ...node.data,
-                    isGenerating: node.id === screenId ? false : node.data.isGenerating
-                  }
-                })));
                 
                 updateLastMessage(msg => {
                   const steps = [...(msg.designSteps || [])];
@@ -529,7 +504,7 @@ export default function Home() {
         isThinkingComplete: true,
         designSteps: [
           { id: 'design-system', label: 'Generating Design System', status: 'running' as const },
-          { id: `page-${firstScreen?.id || '0'}`, label: `Generating ${firstScreen?.name || 'Unknown'}`, status: 'running' as const }
+          { id: `page-${firstScreen?.id || '0'}`, label: `Generating page ${firstScreen?.name || 'Unknown'}`, status: 'running' as const }
         ]
       }));
 
@@ -539,7 +514,7 @@ export default function Home() {
       const positions = computeFlowLayout(screens, flows, config);
       const positionMap = new Map(positions.map(p => [p.id, p]));
       
-      const newNodes: Node[] = screens.map((screen: PlannedScreen, index: number) => {
+      const newNodes: Node[] = screens.map((screen: PlannedScreen) => {
           const pos = positionMap.get(screen.id);
           
           return {
@@ -552,8 +527,7 @@ export default function Home() {
                 html: '', 
                 onExpand: handleExpand,
                 onShowCode: handleShowCode,
-                viewMode: currentMode,
-                isGenerating: index === 0 // First screen starts generating immediately
+                viewMode: currentMode
             },
             style: { opacity: 1, transition: 'opacity 0.5s' }
           };

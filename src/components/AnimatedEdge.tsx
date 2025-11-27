@@ -62,13 +62,8 @@ const AnimatedEdge = ({
 
   return (
     <>
-      {/* Gradient defs */}
+      {/* Glow filter for the animated dots */}
       <defs>
-        <linearGradient id={`gradient-${id}`} gradientUnits="userSpaceOnUse">
-          <stop offset="0%" stopColor={color} stopOpacity="0.2" />
-          <stop offset="50%" stopColor={color} stopOpacity="1" />
-          <stop offset="100%" stopColor={color} stopOpacity="0.2" />
-        </linearGradient>
         <filter id="glow-strong" x="-50%" y="-50%" width="200%" height="200%">
           <feGaussianBlur stdDeviation="3.5" result="coloredBlur" />
           <feMerge>
@@ -85,21 +80,22 @@ const AnimatedEdge = ({
         style={{
           stroke: color,
           strokeWidth: 4,
-          strokeOpacity: 0.15,
+          strokeOpacity: 0.1,
           fill: 'none',
         }}
       />
 
-      {/* Main edge path with gradient */}
+      {/* Main edge path */}
       <BaseEdge
         id={id}
         path={edgePath}
         markerEnd={markerEnd}
         style={{
           ...style,
-          stroke: `url(#gradient-${id})`,
+          stroke: color,
           strokeWidth: 2,
           strokeLinecap: 'round',
+          strokeOpacity: 0.5,
         }}
       />
       
@@ -111,7 +107,7 @@ const AnimatedEdge = ({
         fill="none"
         strokeDasharray="10, 10"
         strokeDashoffset="0"
-        opacity="0.6"
+        opacity="0.4"
       >
         <animate
           attributeName="stroke-dashoffset"

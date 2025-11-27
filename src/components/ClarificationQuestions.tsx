@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ChevronRight, ChevronDown, Edit3 } from 'lucide-react';
+import { ChevronRight, ChevronDown, Edit3, CheckCircle2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 export interface ClarificationQuestion {
@@ -88,17 +88,18 @@ export default function ClarificationQuestions({ questions, onSubmit, onAutoGene
   const allAnswered = questions.every(q => !!answers[q.id]);
 
   return (
-    <div className="w-full max-w-xl bg-[#18181b] border border-[#27272a] rounded-lg overflow-hidden transition-all duration-200 shadow-xl">
+    <div className="w-full max-w-xl bg-[#1e1e1e] border border-[#27272a] rounded-xl overflow-hidden transition-all duration-200">
       <div 
         onClick={() => setIsExpanded(!isExpanded)} 
-        className={cn(
-          "flex items-center justify-between px-4 py-3 bg-[#202023] transition-colors cursor-pointer hover:bg-[#27272a]",
-          isExpanded && "border-b border-[#27272a]"
-        )}
+        className="flex items-center justify-between px-4 py-3 transition-colors cursor-pointer hover:bg-white/5"
       >
          <div className="flex items-center gap-2">
-           <div className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse" />
-           <span className="text-xs font-medium text-zinc-300 tracking-wide">
+           {isAnswered ? (
+             <CheckCircle2 size={14} className="text-blue-500" />
+           ) : (
+             <div className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse" />
+           )}
+           <span className={`text-xs font-medium tracking-wide ${isAnswered ? 'text-zinc-500' : 'text-white'}`}>
              Question {startIndex}
            </span>
          </div>
@@ -170,7 +171,7 @@ export default function ClarificationQuestions({ questions, onSubmit, onAutoGene
                                 autoFocus={!isAnswered}
                                 disabled={isAnswered}
                                 className={cn(
-                                    "w-full bg-[#121214] border rounded px-3 py-2 text-sm text-zinc-200 placeholder:text-zinc-600 transition-all",
+                                    "w-full bg-[#121214] border rounded px-3 py-2 text-xs text-zinc-200 placeholder:text-zinc-600 transition-all",
                                     isAnswered ? "border-transparent opacity-80 cursor-default" : "border-[#27272a] focus:outline-none focus:border-amber-500/40 focus:ring-1 focus:ring-amber-500/10"
                                 )}
                             />
