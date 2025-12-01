@@ -79,6 +79,10 @@ export const AgentState = Annotation.Root({
     reducer: (x, y) => x.concat(y),
     default: () => [],
   }),
+  contextScreen: Annotation<{ id: string; name: string; html: string } | undefined>({
+    reducer: (_, y) => y,
+    default: () => undefined,
+  }),
 });
 
 // --- Models ---
@@ -89,20 +93,22 @@ const llm = new ChatGoogleGenerativeAI({
   maxOutputTokens: 65536,
 });
 
-// --- LLM Helper with timeout ---
+// Create a tagged LLM instance for parallel screen generation
+function createScreenLLM(screenId: string) {
+  return new ChatGoogleGenerativeAI({
+    model: "gemini-3-pro-preview",
+    temperature: 1.0,
+    maxOutputTokens: 65536,
+  }).withConfig({ tags: [`screen:${screenId}`] });
+}
 
-async function invokeLLM(prompt: string, timeoutMs = 60000): Promise<string> {
+// --- LLM Helper (no timeout - wait for completion) ---
+
+async function invokeLLM(prompt: string): Promise<string> {
   console.log("[LLM] Starting request...");
-  
-  const timeoutPromise = new Promise<never>((_, reject) => {
-    setTimeout(() => reject(new Error(`LLM timeout after ${timeoutMs}ms`)), timeoutMs);
-  });
 
   try {
-    const response = await Promise.race([
-      llm.invoke(prompt),
-      timeoutPromise
-    ]);
+    const response = await llm.invoke(prompt);
     console.log("[LLM] Response received");
     return response.content as string;
   } catch (error) {
@@ -115,7 +121,7 @@ async function invokeLLM(prompt: string, timeoutMs = 60000): Promise<string> {
 
 // Node 0: Clarifier (Conversational - one question at a time)
 async function clarifierNode(state: typeof AgentState.State) {
-  const { userRequest, conversationHistory, skipToPlanning, planFeedback, enrichedRequest, designApproved } = state;
+  const { userRequest, conversationHistory, skipToPlanning, planFeedback, enrichedRequest, designApproved, contextScreen } = state;
   
   if (designApproved) {
     return {
@@ -163,9 +169,24 @@ async function clarifierNode(state: typeof AgentState.State) {
       }).join('\n\n')
     : 'No previous questions yet.';
 
+  let contextSection = "";
+  if (contextScreen) {
+    contextSection = `
+CONTEXT SCREEN (User is referring to this screen):
+Name: ${contextScreen.name}
+ID: ${contextScreen.id}
+Current HTML:
+\`\`\`html
+${contextScreen.html.substring(0, 20000)}... (truncated)
+\`\`\`
+`;
+  }
+
   const prompt = `You are a Product Discovery Expert helping to understand an app idea before designing it.
 
 ORIGINAL USER REQUEST: "${userRequest}"
+
+${contextSection}
 
 CONVERSATION SO FAR:
 ${historyText}
@@ -261,7 +282,7 @@ OR if ready to design:
 
 // Node 1: Architecte (Thinking + Planning)
 async function architectNode(state: typeof AgentState.State) {
-  const { userRequest, enrichedRequest, planFeedback, plannedScreens: existingScreens, plannedFlows: existingFlows, designApproved } = state;
+  const { userRequest, enrichedRequest, planFeedback, plannedScreens: existingScreens, plannedFlows: existingFlows, designApproved, contextScreen } = state;
   const requestToUse = enrichedRequest || userRequest;
   
   const hasFeedback = planFeedback && planFeedback.trim().length > 0;
@@ -289,6 +310,18 @@ ${existingFlowsText}
 USER FEEDBACK ON THIS PLAN: "${planFeedback}"
 
 You must UPDATE the plan based on this feedback. Add, remove, or modify screens and flows as requested.
+`;
+  }
+
+  if (contextScreen) {
+    feedbackSection += `
+CONTEXT SCREEN (User is specifically referring to this screen):
+Name: ${contextScreen.name}
+ID: ${contextScreen.id}
+Current HTML:
+\`\`\`html
+${contextScreen.html.substring(0, 20000)}... (truncated)
+\`\`\`
 `;
   }
   
@@ -371,11 +404,18 @@ This creates a proper tree visualization, NOT a linear chain.
 
 // Node 2: Designer (generates ONE screen at a time)
 async function designerNode(state: typeof AgentState.State) {
-  const { plannedScreens, userRequest, enrichedRequest, currentScreenIndex, referenceHtml } = state;
+  const { plannedScreens, userRequest, enrichedRequest, currentScreenIndex, referenceHtml, generatedScreens } = state;
   const requestToUse = enrichedRequest || userRequest;
   
   const screen = plannedScreens[currentScreenIndex];
   if (!screen) return { currentScreenHtml: "" };
+  
+  // Check if screen is already generated
+  const existingScreen = generatedScreens.find(s => s.id === screen.id);
+  if (existingScreen) {
+    console.log(`[Designer] Skipping generation for ${screen.name} (already exists)`);
+    return { currentScreenHtml: existingScreen.html };
+  }
   
   const isFirstScreen = currentScreenIndex === 0;
   
@@ -407,7 +447,12 @@ You MUST make the interface functional using **Alpine.js** (v3).
 Flawless Mobile Responsiveness: The design must be fully adaptive and function perfectly on mobile devices. Ensure layouts transition smoothly from desktop to small screens, utilizing stackable grids, touch-friendly sizing, and optimized navigation to maintain high usability and visual impact across all viewports.
 
 IMAGES - CRITICAL:
-- NEVER use unvalid URLs (check them first)`;
+- NEVER use unvalid URLs (check them first)
+
+LAYOUT - CRITICAL:
+- The <body> MUST have "min-height: 100vh" to fill the entire viewport
+- The page background color MUST cover the full height (no gaps at bottom)
+- Use flexbox with flex-col on body and flex-grow on main content to push footer down`;
 
   let prompt: string;
   
@@ -444,7 +489,7 @@ No markdown blocks, just raw HTML.`;
   }
 
   try {
-    const content = await invokeLLM(prompt, 120000); // 2 min timeout for design
+    const content = await invokeLLM(prompt);
     let html = content
       .replace(/```html/g, '')
       .replace(/```/g, '')
@@ -461,14 +506,12 @@ No markdown blocks, just raw HTML.`;
   }
 }
 
-// Node 3: Save screen and advance
+// Node 3: Save first screen (design system) and set referenceHtml
 async function saveScreenNode(state: typeof AgentState.State) {
-  const { currentScreenHtml, plannedScreens, currentScreenIndex, referenceHtml } = state;
+  const { currentScreenHtml, plannedScreens, currentScreenIndex } = state;
   
   const screen = plannedScreens[currentScreenIndex];
   if (!screen) return {};
-  
-  const isFirstScreen = currentScreenIndex === 0;
   
   return {
     generatedScreens: [{
@@ -476,9 +519,148 @@ async function saveScreenNode(state: typeof AgentState.State) {
       name: screen.name,
       html: currentScreenHtml,
     }],
-    referenceHtml: isFirstScreen ? currentScreenHtml : referenceHtml,
-    currentScreenIndex: currentScreenIndex + 1,
+    referenceHtml: currentScreenHtml,
+    currentScreenIndex: 1,
     currentScreenHtml: "",
+  };
+}
+
+// Helper function to build the prompt for a screen
+function buildScreenPrompt(
+  screen: { id: string; name: string; description: string },
+  referenceHtml: string,
+  requestToUse: string
+): string {
+  return `You are an elite UI/UX Designer creating production-ready interfaces.
+
+USER REQUEST: "${requestToUse}"
+SCREEN: ${screen.name}
+DESCRIPTION: ${screen.description}
+
+DESIGN REQUIREMENTS:
+
+Context-Adaptive Excellence: Create a highly polished, production-grade design that perfectly matches the specific nature of the request. Whether it is a game interface, a dashboard, or a landing page, automatically select the most appropriate layout, color palette, and typography to create a stunning visual experience.
+
+Maximum Detail and Density: The interface must be densely populated and feature-rich. Do not produce simple wireframes or empty containers. Fill the space with intricate details, realistic content, background elements, and meaningful UI components that demonstrate a fully finished product.
+
+Premium Visual Styling: Apply high-end design principles. Use sophisticated styling techniques such as nuanced lighting, shadows, gradients, borders, and textures to add depth and realism. The aesthetic should feel modern, professional, and visually captivating.
+
+Comprehensive Interactivity: Design every element to look tangible and interactive. Include visual feedback for user actions, such as distinct hover states, focus rings, and active states. The interface should feel alive and responsive.
+
+Robust Implementation: Ensure the design is structurally sound.
+
+Functional Interactivity with Alpine.js:
+You MUST make the interface functional using **Alpine.js** (v3).
+- Use \`x-data\` to manage state and behavior directly within the HTML.
+- Ensure all interactive elements respond appropriately to user input.
+- Implement logical flows and state updates that match the application's purpose.
+- Do not produce static artifacts; the UI must be playable/usable.
+
+Flawless Mobile Responsiveness: The design must be fully adaptive and function perfectly on mobile devices. Ensure layouts transition smoothly from desktop to small screens, utilizing stackable grids, touch-friendly sizing, and optimized navigation to maintain high usability and visual impact across all viewports.
+
+IMAGES - CRITICAL:
+- NEVER use unvalid URLs (check them first)
+
+LAYOUT - CRITICAL:
+- The <body> MUST have "min-height: 100vh" to fill the entire viewport
+- The page background color MUST cover the full height (no gaps at bottom)
+- Use flexbox with flex-col on body and flex-grow on main content to push footer down
+
+REFERENCE DESIGN (Screen #1 - your design bible):
+\`\`\`html
+${referenceHtml}
+\`\`\`
+
+COPY THE VISUAL DNA - You MUST preserve:
+1. **Color Palette**
+2. **Typography**
+3. **Spacing Patterns**
+4. **Component Styles** - Buttons, cards, inputs, badges must look identical
+5. **Icon Style** - Copy SVG icons exactly as they appear in the reference
+
+Think of it like a website template: the "chrome" (navigation, branding, layout frame) stays the same, only the "page content" changes for "${screen.name}".
+
+OUTPUT: Return a COMPLETE HTML document starting with <!DOCTYPE html>. Include:
+- <head> with Tailwind CSS CDN, Alpine.js CDN, Google Fonts imports, and any custom <style>
+- <body> with all your content
+No markdown blocks, just raw HTML.`;
+}
+
+// Helper function to generate a single screen HTML with tagged LLM for streaming identification
+async function generateScreenHtmlWithTag(
+  screen: { id: string; name: string; description: string },
+  referenceHtml: string,
+  requestToUse: string
+): Promise<string> {
+  const prompt = buildScreenPrompt(screen, referenceHtml, requestToUse);
+  const taggedLLM = createScreenLLM(screen.id);
+
+  try {
+    console.log(`[generateScreenHtmlWithTag] Starting for screen: ${screen.id}, referenceHtml length: ${referenceHtml?.length || 0}`);
+    
+    const response = await taggedLLM.invoke(prompt);
+    
+    let html = (response.content as string)
+      .replace(/```html/g, '')
+      .replace(/```/g, '')
+      .trim();
+    
+    if (html.startsWith('"') && html.endsWith('"')) {
+      html = html.slice(1, -1);
+    }
+    
+    // Validate HTML is complete
+    if (!html.includes('</html>')) {
+      console.warn(`[generateScreenHtmlWithTag] WARNING: Incomplete HTML for screen ${screen.id} - missing </html> tag`);
+    }
+    
+    console.log(`[generateScreenHtmlWithTag] Completed for screen: ${screen.id}, html length: ${html.length}`);
+    return html;
+  } catch (e) {
+    console.error("[generateScreenHtmlWithTag] Error for screen:", screen.id, e);
+    return "";
+  }
+}
+
+// Node 4: Parallel Designer - generates ALL remaining screens in parallel with streaming support
+async function parallelDesignerNode(state: typeof AgentState.State) {
+  const { plannedScreens, referenceHtml, userRequest, enrichedRequest, generatedScreens } = state;
+  const requestToUse = enrichedRequest || userRequest;
+  
+  const remainingScreens = plannedScreens.slice(1).filter(screen => 
+    !generatedScreens.some(generated => generated.id === screen.id)
+  );
+  
+  if (remainingScreens.length === 0) {
+    return { generatedScreens: [] };
+  }
+  
+  console.log(`[ParallelDesigner] Starting parallel generation of ${remainingScreens.length} screens`);
+  console.log(`[ParallelDesigner] referenceHtml available: ${!!referenceHtml}, length: ${referenceHtml?.length || 0}`);
+  
+  if (!referenceHtml || referenceHtml.length === 0) {
+    console.error('[ParallelDesigner] ERROR: referenceHtml is empty! Design system will not be applied.');
+  }
+  
+  // Use tagged LLM instances so streamEvents can identify which screen each chunk belongs to
+  const results = await Promise.all(
+    remainingScreens.map(async (screen) => {
+      console.log(`[ParallelDesigner] Generating: ${screen.name} (${screen.id})`);
+      const html = await generateScreenHtmlWithTag(screen, referenceHtml, requestToUse);
+      console.log(`[ParallelDesigner] Completed: ${screen.name} (${screen.id})`);
+      return {
+        id: screen.id,
+        name: screen.name,
+        html,
+      };
+    })
+  );
+  
+  console.log(`[ParallelDesigner] All ${remainingScreens.length} screens generated`);
+  
+  return {
+    generatedScreens: results,
+    currentScreenIndex: plannedScreens.length,
   };
 }
 
@@ -506,11 +688,11 @@ function afterArchitect(state: typeof AgentState.State): "designer" | "__end__" 
   return "__end__";
 }
 
-function shouldContinueOrEnd(state: typeof AgentState.State): "designer" | "__end__" {
-  const { currentScreenIndex, plannedScreens } = state;
+function afterSaveScreen(state: typeof AgentState.State): "parallel_designer" | "__end__" {
+  const { plannedScreens } = state;
   
-  if (currentScreenIndex < plannedScreens.length) {
-    return "designer";
+  if (plannedScreens.length > 1) {
+    return "parallel_designer";
   }
   return "__end__";
 }
@@ -522,10 +704,11 @@ const workflow = new StateGraph(AgentState)
   .addNode("architect", architectNode)
   .addNode("designer", designerNode)
   .addNode("save_screen", saveScreenNode)
+  .addNode("parallel_designer", parallelDesignerNode)
   .addEdge(START, "clarifier")
   .addConditionalEdges("clarifier", afterClarifier)
   .addConditionalEdges("architect", afterArchitect)
   .addEdge("designer", "save_screen")
-  .addConditionalEdges("save_screen", shouldContinueOrEnd);
+  .addConditionalEdges("save_screen", afterSaveScreen);
 
 export const appGeneratorGraph = workflow.compile();

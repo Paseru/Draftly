@@ -31,7 +31,7 @@ export default function ThinkingBlock({ content, isComplete = false, isPaused = 
 
   useEffect(() => {
     if (isComplete || isPaused) {
-      setIsOpen(false);
+      requestAnimationFrame(() => setIsOpen(false));
     }
   }, [isComplete, isPaused]);
 

@@ -21,7 +21,7 @@ export default function PlanReview({ screens, onApprove, onRequestRefine, isAppr
   // Auto-collapse when approved
   useEffect(() => {
     if (isApproved) {
-      setIsExpanded(false);
+      requestAnimationFrame(() => setIsExpanded(false));
     }
   }, [isApproved]);
 
@@ -75,7 +75,9 @@ export default function PlanReview({ screens, onApprove, onRequestRefine, isAppr
                   <div className="text-[11px] text-zinc-500 leading-relaxed markdown-content">
                     <ReactMarkdown 
                       components={{
+                        // eslint-disable-next-line @typescript-eslint/no-unused-vars
                         strong: ({node, ...props}) => <span className="font-semibold text-zinc-300" {...props} />,
+                        // eslint-disable-next-line @typescript-eslint/no-unused-vars
                         p: ({node, ...props}) => <p className="my-0.5" {...props} />
                       }}
                     >

@@ -1,19 +1,78 @@
-import { memo } from 'react';
+import { memo, useRef, useEffect } from 'react';
 import { Handle, Position } from '@xyflow/react';
-import { Maximize2, Code } from 'lucide-react';
+import { Maximize2, Code, Edit3 } from 'lucide-react';
 
 interface PreviewNodeProps {
+  id: string;
   data: {
     label: string;
     html: string;
-    onExpand?: (html: string) => void;
+    onExpand?: (screenId: string) => void;
     onShowCode?: (html: string) => void;
+    onFocus?: (screenId: string) => void;
     viewMode?: 'desktop' | 'mobile';
     isGenerating?: boolean;
+    isSelected?: boolean;
   };
 }
 
-const PreviewNode = ({ data }: PreviewNodeProps) => {
+// Streaming iframe component using document.write for smooth streaming updates
+const StreamingIframe = memo(({ html, title, isGenerating }: { html: string; title: string; isGenerating?: boolean }) => {
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+  const writtenLengthRef = useRef(0);
+  const isStreamOpenRef = useRef(false);
+
+  useEffect(() => {
+    const iframe = iframeRef.current;
+    if (!iframe?.contentDocument) return;
+    const doc = iframe.contentDocument;
+
+    // Determine if we need to reset the stream (new content or restart)
+    // 1. Content length decreased (new generation started)
+    // 2. No content written yet but we have content (initial load)
+    const shouldReset = html.length < writtenLengthRef.current || (writtenLengthRef.current === 0 && html.length > 0);
+
+    if (shouldReset) {
+      doc.open();
+      isStreamOpenRef.current = true;
+      doc.write(html);
+      writtenLengthRef.current = html.length;
+    } else if (html.length > writtenLengthRef.current) {
+      // Append only the new chunk
+      if (!isStreamOpenRef.current) {
+        doc.open();
+        isStreamOpenRef.current = true;
+        doc.write(html);
+      } else {
+        const chunk = html.slice(writtenLengthRef.current);
+        doc.write(chunk);
+      }
+      writtenLengthRef.current = html.length;
+    }
+
+    // Close the stream only when generation is finished
+    if (!isGenerating && isStreamOpenRef.current) {
+      doc.close();
+      isStreamOpenRef.current = false;
+    }
+  }, [html, isGenerating]);
+  
+  return (
+    <iframe 
+      ref={iframeRef}
+      className="flex-1 w-full border-none bg-[#09090b]"
+      title={title}
+      sandbox="allow-scripts allow-same-origin"
+    />
+  );
+});
+
+StreamingIframe.displayName = 'StreamingIframe';
+
+// Export for use in fullscreen modal
+export { StreamingIframe };
+
+const PreviewNode = ({ id, data }: PreviewNodeProps) => {
   const viewMode = data.viewMode || 'desktop';
   const isMobile = viewMode === 'mobile';
   
@@ -25,10 +84,13 @@ const PreviewNode = ({ data }: PreviewNodeProps) => {
     return (
       <div 
         style={{ width: w, height: h }}
-        className="relative flex flex-col bg-[#1e1e1e] rounded-lg border border-[#3e3e42] overflow-hidden shadow-2xl"
+        className={`group relative flex flex-col bg-[#1e1e1e] rounded-lg border overflow-hidden shadow-2xl transition-all duration-300 cursor-pointer
+          ${data.isSelected ? 'border-blue-500 ring-4 ring-blue-500/20 shadow-[0_0_50px_-10px_rgba(59,130,246,0.2)]' : 'border-[#3e3e42]'}
+        `}
+        onClick={() => data.onFocus?.(id)}
       >
         {/* Simple header */}
-        <div className="h-9 bg-[#252526] border-b border-[#3e3e42] flex items-center justify-between px-3 shrink-0">
+        <div className="h-9 bg-[#252526] border-b border-[#3e3e42] flex items-center justify-between px-3 shrink-0 transition-colors duration-300 group-hover:bg-[#323238]">
           <div className="flex items-center gap-2">
             <div className="flex gap-1.5">
               <div className="w-3 h-3 rounded-full bg-[#ff5f56]"></div>
@@ -40,13 +102,19 @@ const PreviewNode = ({ data }: PreviewNodeProps) => {
           <div className="flex gap-1">
             <button 
               className="p-1.5 text-[#858585] hover:text-white hover:bg-[#3e3e42] rounded cursor-pointer"
-              onClick={() => data.onShowCode?.(data.html)}
+              onClick={(e) => {
+                e.stopPropagation();
+                data.onShowCode?.(data.html);
+              }}
             >
               <Code size={14} />
             </button>
             <button 
               className="p-1.5 text-[#858585] hover:text-white hover:bg-[#3e3e42] rounded cursor-pointer"
-              onClick={() => data.onExpand?.(data.html)}
+              onClick={(e) => {
+                e.stopPropagation();
+                data.onExpand?.(id);
+              }}
             >
               <Maximize2 size={14} />
             </button>
@@ -55,12 +123,7 @@ const PreviewNode = ({ data }: PreviewNodeProps) => {
 
         {/* Content area */}
         {data.html ? (
-          <iframe 
-            srcDoc={data.html}
-            className="flex-1 w-full border-none bg-[#09090b]"
-            title={data.label}
-            sandbox="allow-scripts allow-same-origin"
-          />
+          <StreamingIframe html={data.html} title={data.label} isGenerating={data.isGenerating} />
         ) : data.isGenerating ? (
           <div className="flex-1 bg-[#09090b] flex flex-col items-center justify-center gap-6">
             <div className="relative">
@@ -111,6 +174,15 @@ const PreviewNode = ({ data }: PreviewNodeProps) => {
             <Handle type="source" position={Position.Right} className="!w-3 !h-3 !bg-blue-500 !border-2 !border-[#1e1e1e] !-right-1.5" />
           </>
         )}
+
+        {/* Hover Highlight Overlay & Edit Button */}
+        <div className="absolute inset-0 rounded-lg ring-2 ring-blue-500/0 group-hover:ring-blue-500/50 transition-all duration-300 pointer-events-none z-10" />
+        <div className="absolute bottom-8 left-1/2 -translate-x-1/2 translate-y-4 opacity-0 group-hover:translate-y-0 group-hover:opacity-100 transition-all duration-300 z-20 pointer-events-none">
+          <div className="flex items-center justify-center gap-2 px-6 py-3 bg-gradient-to-r from-blue-600 to-blue-500 rounded-full shadow-lg shadow-blue-600/40 text-white backdrop-blur-sm transform hover:scale-105 transition-transform duration-200">
+            <Edit3 size={18} strokeWidth={2.5} />
+            <span className="font-medium text-sm">Edit</span>
+          </div>
+        </div>
       </div>
     );
   }
@@ -130,14 +202,20 @@ const PreviewNode = ({ data }: PreviewNodeProps) => {
           <div className="flex gap-4 mr-2">
             <button 
               className="p-2 text-[#858585] hover:text-white hover:bg-[#3e3e42] rounded-full transition-colors"
-              onClick={() => data.onShowCode?.(data.html)}
+              onClick={(e) => {
+                e.stopPropagation();
+                data.onShowCode?.(data.html);
+              }}
               title="Show Code"
             >
               <Code size={24} />
             </button>
             <button 
               className="p-2 text-[#858585] hover:text-white hover:bg-[#3e3e42] rounded-full transition-colors"
-              onClick={() => data.onExpand?.(data.html)}
+              onClick={(e) => {
+                e.stopPropagation();
+                data.onExpand?.(id);
+              }}
               title="Expand"
             >
               <Maximize2 size={24} />
@@ -148,7 +226,10 @@ const PreviewNode = ({ data }: PreviewNodeProps) => {
         {/* iPhone Frame */}
         <div 
           style={{ width: w, height: h }}
-          className="relative bg-black rounded-[60px] shadow-[0_0_80px_-20px_rgba(0,0,0,0.5)] border-[12px] border-[#1a1a1a] ring-1 ring-[#333] overflow-hidden select-none flex flex-col"
+          className={`group relative bg-black rounded-[60px] shadow-[0_0_80px_-20px_rgba(0,0,0,0.5)] border-[12px] ring-1 overflow-hidden select-none flex flex-col transition-all duration-300 hover:bg-[#27272a] cursor-pointer
+             ${data.isSelected ? 'border-blue-500 ring-blue-500/50 shadow-[0_0_100px_-10px_rgba(59,130,246,0.3)]' : 'border-[#1a1a1a] ring-[#333]'}
+          `}
+          onClick={() => data.onFocus?.(id)}
         >
           {/* Hardware Buttons */}
           <div className="absolute top-[120px] -left-[16px] w-[4px] h-[26px] bg-[#2a2a2a] rounded-l-[2px]"></div> {/* Mute */}
@@ -176,12 +257,7 @@ const PreviewNode = ({ data }: PreviewNodeProps) => {
 
           {/* Screen Content */}
           {data.html ? (
-            <iframe 
-              srcDoc={data.html}
-              className="flex-1 w-full border-none bg-[#09090b]"
-              title={data.label}
-              sandbox="allow-scripts allow-same-origin"
-            />
+            <StreamingIframe html={data.html} title={data.label} isGenerating={data.isGenerating} />
           ) : data.isGenerating ? (
             <div className="flex-1 w-full bg-[#09090b] flex flex-col items-center justify-center gap-4">
               <div className="relative">
@@ -224,7 +300,20 @@ const PreviewNode = ({ data }: PreviewNodeProps) => {
               </div>
             </div>
           )}
+
+          {/* Mobile Hover Overlay & Edit Button */}
+          <div className="absolute inset-0 rounded-[46px] pointer-events-none z-40 opacity-0 group-hover:opacity-100 transition-opacity duration-300 bg-blue-500/5 mix-blend-overlay" />
+          <div className="absolute bottom-12 left-1/2 -translate-x-1/2 translate-y-4 opacity-0 group-hover:translate-y-0 group-hover:opacity-100 transition-all duration-300 z-50 pointer-events-none">
+            <div className="flex items-center justify-center gap-2 px-6 py-3 bg-gradient-to-r from-blue-600 to-blue-500 rounded-full shadow-lg shadow-blue-600/40 text-white backdrop-blur-sm transform hover:scale-105 transition-transform duration-200">
+              <Edit3 size={18} strokeWidth={2.5} />
+              <span className="font-medium text-sm">Edit</span>
+            </div>
+          </div>
         </div>
+
+        {/* Invisible Handles for mobile to allow edges to render */}
+        <Handle type="target" position={Position.Left} className="!w-3 !h-3 !bg-blue-500 !border-2 !border-[#1e1e1e] !-left-1.5 opacity-0" />
+        <Handle type="source" position={Position.Right} className="!w-3 !h-3 !bg-blue-500 !border-2 !border-[#1e1e1e] !-right-1.5 opacity-0" />
       </div>
     </div>
   );

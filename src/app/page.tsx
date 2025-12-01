@@ -15,9 +15,11 @@ import {
   ReactFlowInstance
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import { Send, Terminal, Play, X, Code as CodeIcon, Square, ChevronLeft, ChevronRight, Monitor, Smartphone } from 'lucide-react';
+import { Send, Terminal, Play, X, Code as CodeIcon, Square, ChevronLeft, ChevronRight, Monitor, Smartphone, Download } from 'lucide-react';
+import JSZip from 'jszip';
+import { saveAs } from 'file-saver';
 import AiPaintbrush from '@/components/ui/AiPaintbrush';
-import PreviewNode from '@/components/PreviewNode';
+import PreviewNode, { StreamingIframe } from '@/components/PreviewNode';
 import ProcessSteps, { Step } from '@/components/ProcessSteps';
 import ThinkingBlock from '@/components/ThinkingBlock';
 import ClarificationQuestions, { ClarificationQuestion, ClarificationAnswer } from '@/components/ClarificationQuestions';
@@ -58,17 +60,16 @@ type Message = {
 };
 
 export default function Home() {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const nodeTypes = useMemo(() => ({
-    previewNode: PreviewNode as any,
+    previewNode: PreviewNode,
   }), []);
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const edgeTypes = useMemo(() => ({
-    animatedEdge: AnimatedEdge as any,
+    animatedEdge: AnimatedEdge,
   }), []);
 
-  const [modalHtml, setModalHtml] = useState<string | null>(null);
+  const [expandedScreenId, setExpandedScreenId] = useState<string | null>(null);
+  const [selectedScreenId, setSelectedScreenId] = useState<string | null>(null);
   const [codeModalContent, setCodeModalContent] = useState<string | null>(null);
 
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
@@ -78,12 +79,14 @@ export default function Home() {
   const [isRefiningPlan, setIsRefiningPlan] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [viewMode, setViewMode] = useState<'desktop' | 'mobile'>('desktop');
+  const [isExportOpen, setIsExportOpen] = useState(false);
   
   // Persistence states for the flow
   const currentPromptRef = useRef<string>('');
   const conversationHistoryRef = useRef<ConversationTurn[]>([]);
   const plannedScreensRef = useRef<PlannedScreen[]>([]);
   const plannedFlowsRef = useRef<ScreenFlow[]>([]);
+  const generatedScreensRef = useRef<Array<{ id: string; name: string; html: string }>>([]);
   const inputRef = useRef<HTMLInputElement>(null);
   const viewModeRef = useRef<'desktop' | 'mobile'>('desktop');
   const thinkingStartTimeRef = useRef<number>(0);
@@ -146,12 +149,26 @@ export default function Home() {
     }, 600);
   };
 
-  const handleExpand = useCallback((html: string) => {
-    setModalHtml(html);
+  const handleExpand = useCallback((screenId: string) => {
+    setExpandedScreenId(screenId);
   }, []);
 
   const handleShowCode = useCallback((html: string) => {
     setCodeModalContent(html);
+  }, []);
+
+  const handleFocus = useCallback((id: string) => {
+    setSelectedScreenId(prev => prev === id ? null : id);
+    const node = reactFlowInstance.current?.getNode(id);
+    if (node && reactFlowInstance.current) {
+      const currentMode = viewModeRef.current;
+      const w = currentMode === 'mobile' ? 430 : 1920;
+      const h = currentMode === 'mobile' ? 932 : 1080;
+      // Center the node
+      const x = node.position.x + w / 2;
+      const y = node.position.y + h / 2;
+      reactFlowInstance.current.setCenter(x, y, { zoom: 0.6, duration: 1200 });
+    }
   }, []);
 
   const updateLastMessage = (updater: (msg: Message) => Message) => {
@@ -246,6 +263,15 @@ export default function Home() {
                   thinkingContent: (msg.thinkingContent || '') + event.data
                 }));
               }
+              
+              // Chat response
+              if (event.type === 'chat_response') {
+                updateLastMessage(msg => ({
+                  ...msg,
+                  content: (msg.content || '') + event.data,
+                  isThinkingComplete: true
+                }));
+              }
 
               // Clarification question arrived - complete thinking
               if (event.type === 'clarification_question') {
@@ -287,7 +313,7 @@ export default function Home() {
 
               // Design phase started
               if (event.type === 'step') {
-                const { name, status, screenName, screenIndex, totalScreens } = event.data;
+                const { name, status, screenName, screenIndex } = event.data;
                 
                 // designing.started is now handled in handlePlanApprove
                 // Only handle designing_screen for subsequent screens
@@ -311,6 +337,34 @@ export default function Home() {
               if (event.type === 'screen_start') {
                 const { screenId } = event.data;
                 
+                // Update step status to running if it exists (for resume case)
+                updateLastMessage(msg => {
+                   const steps = [...(msg.designSteps || [])];
+                   const stepIndex = steps.findIndex(s => s.id === `page-${screenId}`); // Try exact ID match first
+                   
+                   if (stepIndex >= 0) {
+                      steps[stepIndex] = {
+                        ...steps[stepIndex],
+                        status: 'running',
+                        label: steps[stepIndex].label.replace(' (paused)', '')
+                      };
+                      return { ...msg, designSteps: steps };
+                   }
+                   
+                   // Fallback: find by checking if ID contains screenId (less reliable but useful)
+                   const partialIndex = steps.findIndex(s => s.id.includes(screenId));
+                   if (partialIndex >= 0) {
+                      steps[partialIndex] = {
+                        ...steps[partialIndex],
+                        status: 'running',
+                        label: steps[partialIndex].label.replace(' (paused)', '')
+                      };
+                      return { ...msg, designSteps: steps };
+                   }
+
+                   return msg;
+                });
+
                 // Set isGenerating on the current node
                 setNodes(prev => prev.map(node => ({
                   ...node,
@@ -320,14 +374,15 @@ export default function Home() {
                   }
                 })));
                 
-                const targetNode = nodes.find(n => n.id === screenId);
+                // Get fresh node data from instance directly to ensure we have latest position
+                const targetNode = reactFlowInstance.current?.getNode(screenId);
                 if (targetNode && reactFlowInstance.current) {
                   const currentMode = viewModeRef.current;
                   const w = currentMode === 'mobile' ? 375 : 1920;
                   const h = currentMode === 'mobile' ? 812 : 1080;
                   const x = targetNode.position.x + (w / 2); 
                   const y = targetNode.position.y + (h / 2);
-                  reactFlowInstance.current.setCenter(x, y, { zoom: 0.575, duration: 500 });
+                  reactFlowInstance.current.setCenter(x, y, { zoom: 0.6, duration: 1200 });
                 }
               }
 
@@ -335,6 +390,20 @@ export default function Home() {
               if (event.type === 'code_chunk') {
                 const { screenId, content } = event.data;
                 console.log('[Client] code_chunk received:', screenId, content?.length || 0, 'chars');
+                
+                // Update generatedScreensRef
+                const existing = generatedScreensRef.current.find(s => s.id === screenId);
+                if (existing) {
+                   existing.html += content;
+                } else {
+                   const screen = plannedScreensRef.current.find(s => s.id === screenId);
+                   generatedScreensRef.current.push({ 
+                      id: screenId, 
+                      name: screen?.name || 'Unknown', 
+                      html: content 
+                   });
+                }
+
                 setNodes(prev => {
                   const updated = prev.map(node => {
                     if (node.id === screenId) {
@@ -354,12 +423,11 @@ export default function Home() {
                 });
               }
 
-              // Screen complete
+              // Screen complete (first screen only now - design system)
               if (event.type === 'screen_complete') {
                 const { screenId, screenIndex } = event.data;
                 const screens = plannedScreensRef.current;
                 const completedScreen = screens[screenIndex];
-                const nextScreen = screens[screenIndex + 1];
                 
                 // Clear isGenerating on completed node
                 setNodes(prev => prev.map(node => ({
@@ -369,6 +437,13 @@ export default function Home() {
                     isGenerating: node.id === screenId ? false : node.data.isGenerating
                   }
                 })));
+                
+                // Zoom out after first screen is done to show overview
+                if (screenIndex === 0 && reactFlowInstance.current) {
+                  setTimeout(() => {
+                    reactFlowInstance.current?.fitView({ duration: 1200, padding: 0.15 });
+                  }, 500);
+                }
                 
                 updateLastMessage(msg => {
                   const steps = [...(msg.designSteps || [])];
@@ -382,20 +457,102 @@ export default function Home() {
                   }
                   
                   // Mark current page as complete
-                  const pageIndex = steps.findIndex(s => s.label.includes(completedScreen?.name || ''));
-                  if (pageIndex >= 0) {
-                    steps[pageIndex] = { ...steps[pageIndex], status: 'completed', label: `Page ${completedScreen?.name} generated` };
+                  // Use ID if possible for precision, fallback to name logic
+                  const pageId = `page-${screenId}`;
+                  const pageIndexById = steps.findIndex(s => s.id === pageId);
+                  
+                  if (pageIndexById >= 0) {
+                     steps[pageIndexById] = { ...steps[pageIndexById], status: 'completed', label: `Page ${completedScreen?.name || 'Screen'} generated` };
+                  } else {
+                     // Fallback
+                     const pageIndex = steps.findIndex(s => s.label.includes(completedScreen?.name || ''));
+                     if (pageIndex >= 0) {
+                        steps[pageIndex] = { ...steps[pageIndex], status: 'completed', label: `Page ${completedScreen?.name} generated` };
+                     }
                   }
                   
-                  // Add next page step if exists
-                  if (nextScreen && !steps.find(s => s.label.includes(nextScreen.name))) {
-                    steps.push({ 
-                      id: `page-${nextScreen.id}`, 
-                      label: `Generating ${nextScreen.name}`, 
-                      status: 'running' 
-                    });
+                  return { ...msg, designSteps: steps };
+                });
+              }
+
+              // Parallel screens start - show all remaining screen loaders at once
+              if (event.type === 'parallel_screens_start') {
+                const { screens } = event.data;
+                console.log('[Client] parallel_screens_start:', screens.length, 'screens');
+                
+                // Set isGenerating on ALL remaining nodes
+                setNodes(prev => prev.map(node => {
+                  const isRemaining = screens.some((s: { id: string }) => s.id === node.id);
+                  return {
+                    ...node,
+                    data: {
+                      ...node.data,
+                      isGenerating: isRemaining ? true : node.data.isGenerating
+                    }
+                  };
+                }));
+                
+                // Zoom out to show all screens (global view)
+                if (reactFlowInstance.current) {
+                  setTimeout(() => {
+                    reactFlowInstance.current?.fitView({ duration: 800, padding: 0.15 });
+                  }, 100);
+                }
+                
+                // Add all remaining screen steps at once with running status
+                updateLastMessage(msg => {
+                  const steps = [...(msg.designSteps || [])];
+                  screens.forEach((screen: { id: string; name: string; index: number }) => {
+                    const existingStepIndex = steps.findIndex(s => s.id === `page-${screen.id}`);
+                    if (existingStepIndex >= 0) {
+                      // Reset existing step to running
+                      steps[existingStepIndex] = {
+                        ...steps[existingStepIndex],
+                        status: 'running',
+                        label: `Generating ${screen.name}` // Remove (paused) if present
+                      };
+                    } else {
+                      // Add new step
+                      steps.push({ 
+                        id: `page-${screen.id}`, 
+                        label: `Generating ${screen.name}`, 
+                        status: 'running' 
+                      });
+                    }
+                  });
+                  return { ...msg, designSteps: steps };
+                });
+              }
+
+              // Parallel screens complete - all remaining screens generated
+              if (event.type === 'parallel_screens_complete') {
+                const { screens } = event.data;
+                console.log('[Client] parallel_screens_complete:', screens.length, 'screens');
+                
+                // Clear isGenerating on all parallel screens (HTML was already streamed via code_chunk)
+                setNodes(prev => prev.map(node => {
+                  const isParallelScreen = screens.some((s: { id: string }) => s.id === node.id);
+                  if (isParallelScreen) {
+                    return {
+                      ...node,
+                      data: {
+                        ...node.data,
+                        isGenerating: false
+                      }
+                    };
                   }
-                  
+                  return node;
+                }));
+                
+                // Mark all remaining steps as completed
+                updateLastMessage(msg => {
+                  const steps = [...(msg.designSteps || [])];
+                  screens.forEach((screen: { id: string; name: string }) => {
+                    const pageIndex = steps.findIndex(s => s.id === `page-${screen.id}`);
+                    if (pageIndex >= 0) {
+                      steps[pageIndex] = { ...steps[pageIndex], status: 'completed', label: `Page ${screen.name} generated` };
+                    }
+                  });
                   return { ...msg, designSteps: steps };
                 });
               }
@@ -435,10 +592,56 @@ export default function Home() {
     const userPrompt = input;
     setInput('');
 
+    const contextScreen = selectedScreenId ? {
+        id: selectedScreenId,
+        name: nodes.find(n => n.id === selectedScreenId)?.data?.label as string,
+        html: nodes.find(n => n.id === selectedScreenId)?.data?.html as string
+    } : undefined;
+
     if (isRefiningPlan) {
         setIsRefiningPlan(false);
         handlePlanRefine(userPrompt);
         return;
+    }
+    
+    // Check for resume/chat scenario
+    const isPaused = !isLoading && hasStarted && plannedScreensRef.current.length > 0;
+    
+    if (isPaused) {
+        const lower = userPrompt.toLowerCase();
+        const isResume = lower.includes('continue') || lower.includes('resume') || lower.includes('go on');
+        
+        if (isResume) {
+            setMessages(prev => [...prev, { role: 'user', content: userPrompt }]);
+            
+            // Filter out incomplete screens (partial HTML) so they get regenerated
+            // Keep only screens that have a closing html tag
+            const completedScreens = generatedScreensRef.current.filter(s => s.html.includes('</html>'));
+            generatedScreensRef.current = completedScreens;
+
+            // Resume generation
+            await runGeneration({
+                prompt: currentPromptRef.current,
+                conversationHistory: conversationHistoryRef.current,
+                plannedScreens: plannedScreensRef.current,
+                plannedFlows: plannedFlowsRef.current,
+                generatedScreens: completedScreens,
+                designApproved: true
+            });
+            return;
+        } else {
+            // Chat mode
+            setMessages(prev => [...prev, { role: 'user', content: userPrompt }]);
+            
+            await runGeneration({
+                prompt: userPrompt,
+                plannedScreens: plannedScreensRef.current,
+                plannedFlows: plannedFlowsRef.current,
+                mode: 'chat',
+                contextScreen
+            });
+            return;
+        }
     }
 
     const isActiveConversation = conversationHistoryRef.current.length > 0 || plannedScreensRef.current.length > 0;
@@ -456,7 +659,8 @@ export default function Home() {
         prompt: currentPromptRef.current,
         conversationHistory: conversationHistoryRef.current,
         plannedScreens: plannedScreensRef.current,
-        skipToPlanning: true
+        skipToPlanning: true,
+        contextScreen
       });
     } else {
       currentPromptRef.current = userPrompt;
@@ -552,6 +756,7 @@ export default function Home() {
                 html: '', 
                 onExpand: handleExpand,
                 onShowCode: handleShowCode,
+                onFocus: handleFocus,
                 viewMode: currentMode,
                 isGenerating: index === 0 // First screen starts generating immediately
             },
@@ -617,12 +822,76 @@ export default function Home() {
      }
   };
 
+  const handleExportZip = async () => {
+    const zip = new JSZip();
+    let count = 0;
+    
+    nodes.forEach(node => {
+      if (node.data.html && node.data.label) {
+         const safeName = (node.data.label as string).replace(/[^a-z0-9]/gi, '_').toLowerCase();
+         const filename = `${safeName}.html`;
+         zip.file(filename, node.data.html as string);
+         count++;
+      }
+    });
+
+    if (count === 0) {
+        alert("No generated screens to export.");
+        return;
+    }
+
+    const content = await zip.generateAsync({ type: "blob" });
+    saveAs(content, "project-screens.zip");
+    setIsExportOpen(false);
+  };
+
+  const handleExportDesignSystem = async () => {
+    const firstScreenId = plannedScreensRef.current[0]?.id;
+    const firstNode = nodes.find(n => n.id === firstScreenId) || nodes.find(n => n.data.html); 
+
+    if (!firstNode?.data?.html) {
+       alert("No screens generated yet to build a design system from.");
+       return;
+    }
+
+    const originalButtonText = document.getElementById('btn-export-ds')?.innerText;
+    const btn = document.getElementById('btn-export-ds');
+    if (btn) btn.innerText = "Generating...";
+
+    try {
+        const res = await fetch('/api/design-system', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ html: firstNode.data.html })
+        });
+        
+        if (!res.ok) throw new Error("Failed to generate");
+        
+        const data = await res.json();
+        const blob = new Blob([data.markdown], { type: "text/markdown;charset=utf-8" });
+        saveAs(blob, "design-system.md");
+        setIsExportOpen(false);
+    } catch (e) {
+        console.error(e);
+        alert("Error generating design system");
+    } finally {
+        if (btn && originalButtonText) btn.innerText = originalButtonText;
+    }
+  };
+
   useEffect(() => {
      setNodes(nds => nds.map(n => ({
        ...n,
-       data: { ...n.data, onExpand: handleExpand, onShowCode: handleShowCode, viewMode }
+       data: { 
+         ...n.data, 
+         onExpand: handleExpand, 
+         onShowCode: handleShowCode, 
+         onFocus: handleFocus, 
+         viewMode,
+         isSelected: n.id === selectedScreenId
+       }
      })));
-  }, [handleExpand, handleShowCode, viewMode, setNodes]);
+  }, [handleExpand, handleShowCode, handleFocus, viewMode, setNodes, selectedScreenId]);
 
   const isLastMessageInteractive = () => {
       if (messages.length === 0) return false;
@@ -808,6 +1077,22 @@ export default function Home() {
             </div>
     
             <div className="p-4 border-t border-[#3e3e42] bg-[#1e1e1e] shrink-0 w-[400px]">
+              {selectedScreenId && (
+                 <div className="flex items-center gap-2 mb-3 px-1 animate-in fade-in slide-in-from-bottom-2 duration-200">
+                    <div className="bg-[#007acc]/20 text-blue-200 text-[10px] px-2 py-1 rounded border border-[#007acc]/30 flex items-center gap-2 max-w-full">
+                       <span className="opacity-70">Target:</span>
+                       <span className="font-medium truncate">
+                          {nodes.find(n => n.id === selectedScreenId)?.data?.label as string || 'Unknown Screen'}
+                       </span>
+                       <button 
+                         onClick={() => setSelectedScreenId(null)}
+                         className="hover:text-white ml-1 p-0.5 hover:bg-blue-500/20 rounded transition-colors cursor-pointer"
+                       >
+                         <X size={12} />
+                       </button>
+                    </div>
+                 </div>
+              )}
               <form onSubmit={sendMessage} className="relative group">
                 <input
                   ref={inputRef}
@@ -904,87 +1189,188 @@ export default function Home() {
                   <Smartphone size={20} />
                 </button>
               </div>
+
+              {/* Export Menu */}
+              <div className="absolute top-6 right-6 z-50 flex flex-col items-end">
+                <button
+                  onClick={() => setIsExportOpen(!isExportOpen)}
+                  className="bg-[#252526]/90 backdrop-blur-md border border-[#3e3e42] p-2 rounded-full shadow-xl text-zinc-400 hover:text-white transition-all cursor-pointer"
+                  title="Export Project"
+                >
+                  <Download size={20} />
+                </button>
+
+                {isExportOpen && (
+                  <div className="mt-2 bg-[#252526] border border-[#3e3e42] rounded-xl shadow-xl overflow-hidden w-48 flex flex-col animate-in fade-in slide-in-from-top-2 duration-200">
+                    <button 
+                      id="btn-export-ds"
+                      onClick={handleExportDesignSystem}
+                      className="px-4 py-3 text-left text-sm text-zinc-300 hover:bg-[#3e3e42] hover:text-white transition-colors border-b border-[#3e3e42] cursor-pointer"
+                    >
+                      Export Design System
+                      <span className="block text-[10px] text-zinc-500 mt-0.5">Markdown + Ref HTML</span>
+                    </button>
+                    <button 
+                      onClick={handleExportZip}
+                      className="px-4 py-3 text-left text-sm text-zinc-300 hover:bg-[#3e3e42] hover:text-white transition-colors cursor-pointer"
+                    >
+                      Export All Screens
+                      <span className="block text-[10px] text-zinc-500 mt-0.5">Download .zip</span>
+                    </button>
+                  </div>
+                )}
+              </div>
+
             </div>
           </motion.div>
         </div>
       )}
 
-      {/* PREVIEW MODAL */}
-      {modalHtml && (
-        <div className="absolute inset-0 z-50 bg-black/95 flex items-center justify-center backdrop-blur-md p-4 animate-in fade-in duration-200">
-          {viewMode === 'mobile' ? (
-            <div className="relative scale-[0.85] sm:scale-100 transition-transform duration-300">
-               <button 
-                 onClick={() => setModalHtml(null)} 
-                 className="absolute -right-16 top-0 text-zinc-400 hover:text-white p-2 rounded-full hover:bg-white/10 transition-all cursor-pointer"
-               >
-                 <X size={24} />
-               </button>
-
-               <div 
-                 style={{ width: 430, height: 932 }}
-                 className="relative bg-black rounded-[60px] shadow-[0_0_80px_-20px_rgba(0,0,0,0.5)] border-[12px] border-[#1a1a1a] ring-1 ring-[#333] overflow-hidden select-none flex flex-col"
-               >
-                  <div className="absolute top-[120px] -left-[16px] w-[4px] h-[26px] bg-[#2a2a2a] rounded-l-[2px]"></div>
-                  <div className="absolute top-[170px] -left-[16px] w-[4px] h-[50px] bg-[#2a2a2a] rounded-l-[2px]"></div>
-                  <div className="absolute top-[240px] -left-[16px] w-[4px] h-[50px] bg-[#2a2a2a] rounded-l-[2px]"></div>
-                  <div className="absolute top-[190px] -right-[16px] w-[4px] h-[80px] bg-[#2a2a2a] rounded-r-[2px]"></div>
-
-                  <div className="w-full h-[54px] px-7 flex justify-between items-center z-40 text-white pointer-events-none bg-black shrink-0 relative">
-                     <span className="font-semibold text-[15px] tracking-wide pl-1">9:41</span>
-                     
-                     <div className="absolute left-1/2 -translate-x-1/2 top-[11px] w-[120px] h-[35px] bg-[#1a1a1a] rounded-[20px] z-50 flex items-center justify-center gap-5">
-                        <div className="w-2.5 h-2.5 rounded-full bg-[#0a0a0a] shadow-[inset_0_0_2px_1px_rgba(50,20,20,0.5)] opacity-80"></div>
-                        <div className="w-3 h-3 rounded-full bg-[#08081a] shadow-[inset_0_0_4px_2px_rgba(60,70,120,0.6)] ring-[0.5px] ring-white/5"></div>
-                     </div>
-
-                     <div className="flex items-center gap-2 pr-1">
-                        <svg width="18" height="12" viewBox="0 0 18 12" fill="currentColor" className="opacity-90">
-                          <path d="M1 9C1 9.55 1.45 10 2 10H14C14.55 10 15 9.55 15 9V3C15 2.45 14.55 2 14 2H2C1.45 2 1 2.45 1 3V9ZM2 11C0.9 11 0 10.1 0 9V3C0 1.9 0.9 1 2 1H14C15.1 1 16 1.9 16 3V9C16 10.1 15.1 11 14 11H2ZM16.5 4.5V7.5C17.33 7.5 18 6.83 18 6C18 5.17 17.33 4.5 16.5 4.5Z" />
-                          <rect x="2" y="3" width="11" height="6" rx="1" />
-                        </svg>
-                     </div>
-                  </div>
-
-                  <iframe 
-                    srcDoc={modalHtml || ''}
-                    className="flex-1 w-full border-none bg-[#09090b]"
-                    title="Preview"
-                    sandbox="allow-scripts"
-                  />
-               </div>
-            </div>
-          ) : (
-            <div className="bg-[#1e1e1e] w-full h-full rounded-xl border border-[#3e3e42] shadow-2xl flex flex-col overflow-hidden ring-1 ring-white/10">
-              <div className="h-9 bg-[#252526] border-b border-[#3e3e42] flex items-center justify-between px-3">
-                 <div className="flex items-center gap-3">
-                    <div className="flex gap-1.5">
-                      <div className="w-3 h-3 rounded-full bg-[#ff5f56]"></div>
-                      <div className="w-3 h-3 rounded-full bg-[#ffbd2e]"></div>
-                      <div className="w-3 h-3 rounded-full bg-[#27c93f]"></div>
-                    </div>
-                    <span className="text-xs font-medium text-zinc-400">Design Preview</span>
-                 </div>
+      {/* PREVIEW MODAL - uses StreamingIframe for live updates */}
+      {expandedScreenId && (() => {
+        const expandedNode = nodes.find(n => n.id === expandedScreenId);
+        const expandedHtml = (expandedNode?.data?.html as string) || '';
+        const expandedLabel = (expandedNode?.data?.label as string) || 'Preview';
+        const isGenerating = (expandedNode?.data?.isGenerating as boolean) || false;
+        
+        return (
+          <div className="absolute inset-0 z-50 bg-black/95 flex items-center justify-center backdrop-blur-md p-4 animate-in fade-in duration-200">
+            {viewMode === 'mobile' ? (
+              <div className="relative scale-[0.85] sm:scale-100 transition-transform duration-300">
                  <button 
-                   onClick={() => setModalHtml(null)} 
-                   className="text-zinc-400 hover:text-white p-1.5 rounded hover:bg-white/10 transition-all cursor-pointer"
-                   title="Close Preview"
+                   onClick={() => setExpandedScreenId(null)} 
+                   className="absolute -right-16 top-0 text-zinc-400 hover:text-white p-2 rounded-full hover:bg-white/10 transition-all cursor-pointer"
                  >
-                   <X size={14} />
+                   <X size={24} />
                  </button>
+
+                 <div 
+                   style={{ width: 430, height: 932 }}
+                   className="relative bg-black rounded-[60px] shadow-[0_0_80px_-20px_rgba(0,0,0,0.5)] border-[12px] border-[#1a1a1a] ring-1 ring-[#333] overflow-hidden select-none flex flex-col"
+                 >
+                    <div className="absolute top-[120px] -left-[16px] w-[4px] h-[26px] bg-[#2a2a2a] rounded-l-[2px]"></div>
+                    <div className="absolute top-[170px] -left-[16px] w-[4px] h-[50px] bg-[#2a2a2a] rounded-l-[2px]"></div>
+                    <div className="absolute top-[240px] -left-[16px] w-[4px] h-[50px] bg-[#2a2a2a] rounded-l-[2px]"></div>
+                    <div className="absolute top-[190px] -right-[16px] w-[4px] h-[80px] bg-[#2a2a2a] rounded-r-[2px]"></div>
+
+                    <div className="w-full h-[54px] px-7 flex justify-between items-center z-40 text-white pointer-events-none bg-black shrink-0 relative">
+                       <span className="font-semibold text-[15px] tracking-wide pl-1">9:41</span>
+                       
+                       <div className="absolute left-1/2 -translate-x-1/2 top-[11px] w-[120px] h-[35px] bg-[#1a1a1a] rounded-[20px] z-50 flex items-center justify-center gap-5">
+                          <div className="w-2.5 h-2.5 rounded-full bg-[#0a0a0a] shadow-[inset_0_0_2px_1px_rgba(50,20,20,0.5)] opacity-80"></div>
+                          <div className="w-3 h-3 rounded-full bg-[#08081a] shadow-[inset_0_0_4px_2px_rgba(60,70,120,0.6)] ring-[0.5px] ring-white/5"></div>
+                       </div>
+
+                       <div className="flex items-center gap-2 pr-1">
+                          <svg width="18" height="12" viewBox="0 0 18 12" fill="currentColor" className="opacity-90">
+                            <path d="M1 9C1 9.55 1.45 10 2 10H14C14.55 10 15 9.55 15 9V3C15 2.45 14.55 2 14 2H2C1.45 2 1 2.45 1 3V9ZM2 11C0.9 11 0 10.1 0 9V3C0 1.9 0.9 1 2 1H14C15.1 1 16 1.9 16 3V9C16 10.1 15.1 11 14 11H2ZM16.5 4.5V7.5C17.33 7.5 18 6.83 18 6C18 5.17 17.33 4.5 16.5 4.5Z" />
+                            <rect x="2" y="3" width="11" height="6" rx="1" />
+                          </svg>
+                       </div>
+                    </div>
+
+                    {expandedHtml ? (
+                      <StreamingIframe html={expandedHtml} title={expandedLabel} isGenerating={isGenerating} />
+                    ) : isGenerating ? (
+                      <div className="flex-1 w-full bg-[#09090b] flex flex-col items-center justify-center gap-4">
+                        <div className="relative">
+                          <div className="w-12 h-12 border-3 border-blue-500/20 rounded-full"></div>
+                          <div className="absolute inset-0 w-12 h-12 border-3 border-transparent border-t-blue-500 rounded-full animate-spin"></div>
+                        </div>
+                        <div className="text-center px-6">
+                          <p className="text-zinc-400 text-xs font-medium">Generating</p>
+                          <p className="text-zinc-500 text-[10px] mt-0.5">{expandedLabel}</p>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex-1 w-full bg-[#09090b] p-5 pt-4 flex flex-col gap-4 opacity-40">
+                        <div className="h-10 bg-zinc-900 rounded-xl flex items-center px-4 border border-zinc-800/50">
+                          <div className="h-4 w-24 bg-zinc-800 rounded"></div>
+                        </div>
+                        <div className="h-40 bg-zinc-900 rounded-2xl border border-zinc-800/50"></div>
+                        <div className="flex gap-3">
+                          <div className="flex-1 h-24 bg-zinc-900 rounded-xl border border-zinc-800/50"></div>
+                          <div className="flex-1 h-24 bg-zinc-900 rounded-xl border border-zinc-800/50"></div>
+                        </div>
+                        <div className="flex-1 bg-zinc-900 rounded-2xl border border-zinc-800/50 p-4 flex flex-col gap-3">
+                          {[1,2,3,4].map(i => (
+                            <div key={i} className="h-12 bg-zinc-800/50 rounded-lg"></div>
+                          ))}
+                        </div>
+                        <div className="h-16 bg-zinc-900 rounded-2xl border border-zinc-800/50 flex items-center justify-around px-4">
+                          {[1,2,3,4].map(i => (
+                            <div key={i} className="w-10 h-10 bg-zinc-800 rounded-full"></div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                 </div>
               </div>
-              <div className="flex-1 bg-[#09090b] overflow-hidden relative">
-                   <iframe 
-                     srcDoc={modalHtml || ''}
-                     className="w-full h-full border-none"
-                     title="Preview"
-                     sandbox="allow-scripts"
-                   />
+            ) : (
+              <div className="bg-[#1e1e1e] w-full h-full rounded-xl border border-[#3e3e42] shadow-2xl flex flex-col overflow-hidden ring-1 ring-white/10">
+                <div className="h-9 bg-[#252526] border-b border-[#3e3e42] flex items-center justify-between px-3">
+                   <div className="flex items-center gap-3">
+                      <div className="flex gap-1.5">
+                        <div className="w-3 h-3 rounded-full bg-[#ff5f56]"></div>
+                        <div className="w-3 h-3 rounded-full bg-[#ffbd2e]"></div>
+                        <div className="w-3 h-3 rounded-full bg-[#27c93f]"></div>
+                      </div>
+                      <span className="text-xs font-medium text-zinc-400">{expandedLabel}</span>
+                   </div>
+                   <button 
+                     onClick={() => setExpandedScreenId(null)} 
+                     className="text-zinc-400 hover:text-white p-1.5 rounded hover:bg-white/10 transition-all cursor-pointer"
+                     title="Close Preview"
+                   >
+                     <X size={14} />
+                   </button>
+                </div>
+                <div className="flex-1 bg-[#09090b] overflow-hidden relative flex flex-col">
+                  {expandedHtml ? (
+                    <StreamingIframe html={expandedHtml} title={expandedLabel} isGenerating={isGenerating} />
+                  ) : isGenerating ? (
+                    <div className="flex-1 w-full h-full flex flex-col items-center justify-center gap-6">
+                      <div className="relative">
+                        <div className="w-16 h-16 border-4 border-blue-500/20 rounded-full"></div>
+                        <div className="absolute inset-0 w-16 h-16 border-4 border-transparent border-t-blue-500 rounded-full animate-spin"></div>
+                      </div>
+                      <div className="text-center">
+                        <p className="text-zinc-400 text-sm font-medium">Generating {expandedLabel}</p>
+                        <p className="text-zinc-600 text-xs mt-1">Creating your design...</p>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex-1 w-full h-full bg-[#09090b] p-8 flex flex-col gap-6 opacity-40">
+                      <div className="w-full h-16 bg-zinc-900 rounded-lg flex items-center px-6 justify-between border border-zinc-800/50">
+                        <div className="h-6 w-32 bg-zinc-800 rounded"></div>
+                        <div className="flex gap-4">
+                          <div className="h-8 w-8 rounded-full bg-zinc-800"></div>
+                          <div className="h-8 w-8 rounded-full bg-zinc-800"></div>
+                        </div>
+                      </div>
+                      <div className="flex gap-6 flex-1">
+                        <div className="w-64 h-full bg-zinc-900 rounded-lg border border-zinc-800/50 p-4 flex flex-col gap-3">
+                          <div className="h-4 w-3/4 bg-zinc-800 rounded mb-4"></div>
+                          {[1,2,3,4,5].map(i => (
+                            <div key={i} className="h-8 w-full bg-zinc-800/50 rounded"></div>
+                          ))}
+                        </div>
+                        <div className="flex-1 h-full flex flex-col gap-6">
+                          <div className="w-full h-64 bg-zinc-900 rounded-lg border border-zinc-800/50"></div>
+                          <div className="grid grid-cols-2 gap-6 flex-1">
+                            <div className="bg-zinc-900 rounded-lg border border-zinc-800/50"></div>
+                            <div className="bg-zinc-900 rounded-lg border border-zinc-800/50"></div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
-            </div>
-          )}
-        </div>
-      )}
+            )}
+          </div>
+        );
+      })()}
 
       {/* CODE MODAL */}
       {codeModalContent && (

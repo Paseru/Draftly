@@ -94,36 +94,92 @@ export function computeFlowLayout(
     }
   });
   
-  // Group nodes by level
-  const levelGroups: Map<number, string[]> = new Map();
-  levels.forEach((level, id) => {
-    if (!levelGroups.has(level)) {
-      levelGroups.set(level, []);
+  // Calculate Y positions using a recursive tree layout
+  // This ensures parents are centered relative to their children
+  const yPositions: Map<string, number> = new Map();
+  const visitedForY = new Set<string>();
+  let nextAvailableY = 0;
+
+  function calculateY(nodeId: string): number {
+    // If already calculated (shared child in DAG), return existing Y
+    if (visitedForY.has(nodeId)) {
+      return yPositions.get(nodeId) || 0;
     }
-    levelGroups.get(level)!.push(id);
-  });
-  
-  // Calculate positions
-  const positions: NodePosition[] = [];
-  const maxNodesInLevel = Math.max(...Array.from(levelGroups.values()).map((g) => g.length), 1);
-  
-  levelGroups.forEach((nodeIds, level) => {
-    const nodesInLevel = nodeIds.length;
+    visitedForY.add(nodeId);
+
+    const children = outgoing.get(nodeId) || [];
     
-    // Center nodes vertically within the level
-    const totalHeight = nodesInLevel * nodeHeight + (nodesInLevel - 1) * verticalGap;
-    const maxTotalHeight = maxNodesInLevel * nodeHeight + (maxNodesInLevel - 1) * verticalGap;
-    const startY = (maxTotalHeight - totalHeight) / 2;
+    // Filter children that are effectively "next level" or valid to drive layout
+    // (In a DAG, we might want to prioritize main tree branches, but simple traversal works)
     
-    nodeIds.forEach((id, index) => {
-      positions.push({
-        id,
-        x: level * (nodeWidth + horizontalGap),
-        y: startY + index * (nodeHeight + verticalGap),
-        level,
-      });
+    if (children.length === 0) {
+      // Leaf node: assign next available vertical slot
+      const y = nextAvailableY;
+      nextAvailableY += nodeHeight + verticalGap;
+      yPositions.set(nodeId, y);
+      return y;
+    }
+
+    // Non-leaf: Recursively calculate children's positions first (Post-Order)
+    let minChildY = Infinity;
+    let maxChildY = -Infinity;
+    let hasProcessedChildren = false;
+
+    children.forEach((childId) => {
+      // Only consider children that haven't been fixed by another parent yet?
+      // Actually, in a tree, we process them. In a DAG, if already processed, use their value.
+      const childY = calculateY(childId);
+      minChildY = Math.min(minChildY, childY);
+      maxChildY = Math.max(maxChildY, childY);
+      hasProcessedChildren = true;
     });
+
+    if (!hasProcessedChildren) {
+        // Should not happen given children.length > 0 check, but for safety
+        const y = nextAvailableY;
+        nextAvailableY += nodeHeight + verticalGap;
+        yPositions.set(nodeId, y);
+        return y;
+    }
+
+    // Place parent in the vertical center of its children
+    const y = (minChildY + maxChildY) / 2;
+    yPositions.set(nodeId, y);
+    return y;
+  }
+
+  // Calculate Y for all entry points (roots)
+  entryPoints.forEach((rootId) => {
+    calculateY(rootId);
+    // Add spacing between separate trees if necessary
+    // nextAvailableY += nodeHeight + verticalGap; // Optional: separate trees visibly
   });
+
+  // Handle any disconnected components not reached from entry points
+  screens.forEach((s) => {
+    if (!visitedForY.has(s.id)) {
+      calculateY(s.id);
+    }
+  });
+  
+  // Normalize Y positions to start at 0
+  // (Optional, but good for centering the whole graph in the view)
+  const allYs = Array.from(yPositions.values());
+  const minY = Math.min(...allYs);
+  if (minY > 0) {
+    screens.forEach(s => {
+        const current = yPositions.get(s.id) || 0;
+        yPositions.set(s.id, current - minY);
+    });
+  }
+
+  // Assemble final positions
+  const positions: NodePosition[] = screens.map((s) => ({
+    id: s.id,
+    x: (levels.get(s.id) || 0) * (nodeWidth + horizontalGap),
+    y: yPositions.get(s.id) || 0,
+    level: levels.get(s.id) || 0,
+  }));
   
   return positions;
 }

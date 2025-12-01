@@ -1,5 +1,6 @@
 import React from 'react';
 import { CheckCircle2, Loader2 } from 'lucide-react';
+import { TextShimmer } from './ui/TextShimmer';
 
 export type StepStatus = 'running' | 'completed';
 
@@ -29,11 +30,15 @@ export default function ProcessSteps({ steps }: ProcessStepsProps) {
             ) : (
               <Loader2 size={14} className="text-blue-400 animate-spin" />
             )}
-            <span className={`text-xs font-medium ${
-              step.status === 'completed' ? 'text-zinc-500' : 'text-white'
-            }`}>
-              {step.label}
-            </span>
+            {step.status === 'running' ? (
+              <TextShimmer className="text-xs font-medium">
+                {step.label}
+              </TextShimmer>
+            ) : (
+              <span className="text-xs font-medium text-zinc-500">
+                {step.label}
+              </span>
+            )}
           </div>
         </div>
       ))}

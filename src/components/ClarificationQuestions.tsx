@@ -32,20 +32,22 @@ export default function ClarificationQuestions({ questions, onSubmit, onAutoGene
 
   useEffect(() => {
     if (submittedAnswer) {
-        setIsExpanded(false);
-        const qId = submittedAnswer.questionId;
-        const question = questions.find(q => q.id === qId) || questions[0];
-        
-        if (question) {
-             const isOption = question.options.includes(submittedAnswer.answer);
-             if (isOption) {
-                setAnswers(prev => ({ ...prev, [qId]: submittedAnswer.answer }));
-             } else {
-                setAnswers(prev => ({ ...prev, [qId]: submittedAnswer.answer }));
-                setCustomInputs(prev => ({ ...prev, [qId]: submittedAnswer.answer }));
-                setActiveCustom(prev => ({ ...prev, [qId]: true }));
-             }
-        }
+        requestAnimationFrame(() => {
+            setIsExpanded(false);
+            const qId = submittedAnswer.questionId;
+            const question = questions.find(q => q.id === qId) || questions[0];
+            
+            if (question) {
+                 const isOption = question.options.includes(submittedAnswer.answer);
+                 if (isOption) {
+                    setAnswers(prev => ({ ...prev, [qId]: submittedAnswer.answer }));
+                 } else {
+                    setAnswers(prev => ({ ...prev, [qId]: submittedAnswer.answer }));
+                    setCustomInputs(prev => ({ ...prev, [qId]: submittedAnswer.answer }));
+                    setActiveCustom(prev => ({ ...prev, [qId]: true }));
+                 }
+            }
+        });
     }
   }, [submittedAnswer, questions]);
 
