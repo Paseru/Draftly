@@ -15,7 +15,7 @@ import {
   ReactFlowInstance
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import { Send, Terminal, Play, X, Code as CodeIcon, Square, ChevronLeft, ChevronRight, Monitor, Smartphone, Download } from 'lucide-react';
+import { Send, Terminal, X, Code as CodeIcon, ChevronLeft, ChevronRight, Monitor, Smartphone, Download, RotateCcw, Palette } from 'lucide-react';
 import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
 import AiPaintbrush from '@/components/ui/AiPaintbrush';
@@ -24,6 +24,8 @@ import ProcessSteps, { Step } from '@/components/ProcessSteps';
 import ThinkingBlock from '@/components/ThinkingBlock';
 import ClarificationQuestions, { ClarificationQuestion, ClarificationAnswer } from '@/components/ClarificationQuestions';
 import PlanReview from '@/components/PlanReview';
+import DesignSystemSelector, { DesignSystemOptions, DesignSystemSelection } from '@/components/DesignSystemSelector';
+import ReactMarkdown from 'react-markdown';
 
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
@@ -51,12 +53,18 @@ type Message = {
   question?: ClarificationQuestion | null;
   questionIndex?: number;
   submittedAnswer?: ClarificationAnswer | null;
+  // Design System state
+  designSystemOptions?: DesignSystemOptions | null;
+  isDesignSystemReady?: boolean;
+  submittedDesignSystem?: DesignSystemSelection | null;
   // Plan state
   plannedScreens?: PlannedScreen[] | null;
   isPlanReady?: boolean;
   isArchitectureApproved?: boolean;
   // Design steps
   designSteps?: Step[];
+  // Completion message
+  completionMessage?: string;
 };
 
 export default function Home() {
@@ -69,7 +77,6 @@ export default function Home() {
   }), []);
 
   const [expandedScreenId, setExpandedScreenId] = useState<string | null>(null);
-  const [selectedScreenId, setSelectedScreenId] = useState<string | null>(null);
   const [codeModalContent, setCodeModalContent] = useState<string | null>(null);
 
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
@@ -80,6 +87,7 @@ export default function Home() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [viewMode, setViewMode] = useState<'desktop' | 'mobile'>('desktop');
   const [isExportOpen, setIsExportOpen] = useState(false);
+  const [isResetModalOpen, setIsResetModalOpen] = useState(false);
   
   // Persistence states for the flow
   const currentPromptRef = useRef<string>('');
@@ -90,10 +98,30 @@ export default function Home() {
   const inputRef = useRef<HTMLInputElement>(null);
   const viewModeRef = useRef<'desktop' | 'mobile'>('desktop');
   const thinkingStartTimeRef = useRef<number>(0);
+  const designSystemMarkdownRef = useRef<string | null>(null);
+  // Design System refs
+  const designSystemOptionsRef = useRef<DesignSystemOptions | null>(null);
+  const selectedDesignSystemRef = useRef<DesignSystemSelection | null>(null);
 
   useEffect(() => {
     viewModeRef.current = viewMode;
   }, [viewMode]);
+
+  const generateDesignSystemInBackground = async (html: string) => {
+    try {
+      const res = await fetch('/api/design-system', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ html })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        designSystemMarkdownRef.current = data.markdown;
+      }
+    } catch (e) {
+      console.error('Background design system generation failed:', e);
+    }
+  };
   
   const abortControllerRef = useRef<AbortController | null>(null);
   const reactFlowInstance = useRef<ReactFlowInstance | null>(null);
@@ -158,13 +186,11 @@ export default function Home() {
   }, []);
 
   const handleFocus = useCallback((id: string) => {
-    setSelectedScreenId(prev => prev === id ? null : id);
     const node = reactFlowInstance.current?.getNode(id);
     if (node && reactFlowInstance.current) {
       const currentMode = viewModeRef.current;
       const w = currentMode === 'mobile' ? 430 : 1920;
       const h = currentMode === 'mobile' ? 932 : 1080;
-      // Center the node
       const x = node.position.x + w / 2;
       const y = node.position.y + h / 2;
       reactFlowInstance.current.setCenter(x, y, { zoom: 0.6, duration: 1200 });
@@ -282,6 +308,20 @@ export default function Home() {
                   ...msg, 
                   question, 
                   questionIndex: qIndex, 
+                  isThinkingComplete: true,
+                  thinkingDuration: duration
+                }));
+              }
+
+              // Design system options arrived - complete thinking and show selector
+              if (event.type === 'design_system_options') {
+                const options = event.data as DesignSystemOptions;
+                designSystemOptionsRef.current = options;
+                const duration = Math.round((Date.now() - thinkingStartTimeRef.current) / 1000);
+                updateLastMessage(msg => ({ 
+                  ...msg, 
+                  designSystemOptions: options,
+                  isDesignSystemReady: true,
                   isThinkingComplete: true,
                   thinkingDuration: duration
                 }));
@@ -443,6 +483,12 @@ export default function Home() {
                   setTimeout(() => {
                     reactFlowInstance.current?.fitView({ duration: 1200, padding: 0.15 });
                   }, 500);
+                  
+                  // Generate design system in background for instant export
+                  const completedNode = generatedScreensRef.current.find(s => s.id === screenId);
+                  if (completedNode?.html) {
+                    generateDesignSystemInBackground(completedNode.html);
+                  }
                 }
                 
                 updateLastMessage(msg => {
@@ -559,8 +605,13 @@ export default function Home() {
 
               // Done
               if (event.type === 'done') {
+                const screens = plannedScreensRef.current;
+                const screenList = screens.map(s => `- **${s.name}**`).join('\n');
+                const completionMsg = `I've successfully designed your application with ${screens.length} screens:\n\n${screenList}\n\nYou can now preview each screen, view the code, or export them.`;
+                
                 updateLastMessage(msg => ({
                   ...msg,
+                  completionMessage: completionMsg,
                   designSteps: msg.designSteps?.map(s => ({ ...s, status: 'completed' as const }))
                 }));
               }
@@ -591,12 +642,6 @@ export default function Home() {
 
     const userPrompt = input;
     setInput('');
-
-    const contextScreen = selectedScreenId ? {
-        id: selectedScreenId,
-        name: nodes.find(n => n.id === selectedScreenId)?.data?.label as string,
-        html: nodes.find(n => n.id === selectedScreenId)?.data?.html as string
-    } : undefined;
 
     if (isRefiningPlan) {
         setIsRefiningPlan(false);
@@ -637,8 +682,7 @@ export default function Home() {
                 prompt: userPrompt,
                 plannedScreens: plannedScreensRef.current,
                 plannedFlows: plannedFlowsRef.current,
-                mode: 'chat',
-                contextScreen
+                mode: 'chat'
             });
             return;
         }
@@ -659,8 +703,7 @@ export default function Home() {
         prompt: currentPromptRef.current,
         conversationHistory: conversationHistoryRef.current,
         plannedScreens: plannedScreensRef.current,
-        skipToPlanning: true,
-        contextScreen
+        skipToPlanning: true
       });
     } else {
       currentPromptRef.current = userPrompt;
@@ -717,6 +760,25 @@ export default function Home() {
         conversationHistory: conversationHistoryRef.current,
         plannedScreens: plannedScreensRef.current,
         skipToPlanning: true
+    });
+  };
+
+  const handleDesignSystemSelect = async (selection: DesignSystemSelection) => {
+    selectedDesignSystemRef.current = selection;
+    
+    updateLastMessage(msg => ({
+      ...msg,
+      isDesignSystemReady: false,
+      submittedDesignSystem: selection
+    }));
+
+    await runGeneration({
+      prompt: currentPromptRef.current,
+      conversationHistory: conversationHistoryRef.current,
+      plannedScreens: plannedScreensRef.current,
+      designSystemOptions: designSystemOptionsRef.current,
+      selectedDesignSystem: selection,
+      designSystemComplete: true
     });
   };
 
@@ -780,7 +842,9 @@ export default function Home() {
           conversationHistory: conversationHistoryRef.current,
           plannedScreens: plannedScreensRef.current,
           plannedFlows: plannedFlowsRef.current,
-          designApproved: true
+          designApproved: true,
+          selectedDesignSystem: selectedDesignSystemRef.current,
+          designSystemComplete: true
       }, true); // isDesignPhase = true
   };
 
@@ -806,6 +870,29 @@ export default function Home() {
           plannedScreens: currentPlan,
           planFeedback: feedback
       });
+  };
+
+  const handleReset = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+    setIsLoading(false);
+    setHasStarted(false);
+    setMessages([{ role: 'assistant', content: 'Hey ! How can i help you design your app today ?' }]);
+    setNodes([]);
+    setEdges([]);
+    plannedScreensRef.current = [];
+    plannedFlowsRef.current = [];
+    generatedScreensRef.current = [];
+    conversationHistoryRef.current = [];
+    currentPromptRef.current = '';
+    designSystemMarkdownRef.current = null;
+    designSystemOptionsRef.current = null;
+    selectedDesignSystemRef.current = null;
+    setIsResetModalOpen(false);
+    setIsSidebarOpen(true);
+    setInput('');
   };
 
   const handleRequestRefine = () => {
@@ -846,6 +933,15 @@ export default function Home() {
   };
 
   const handleExportDesignSystem = async () => {
+    // Use pre-generated markdown if available (instant export)
+    if (designSystemMarkdownRef.current) {
+      const blob = new Blob([designSystemMarkdownRef.current], { type: "text/markdown;charset=utf-8" });
+      saveAs(blob, "design-system.md");
+      setIsExportOpen(false);
+      return;
+    }
+
+    // Fallback: generate on-demand if not ready yet
     const firstScreenId = plannedScreensRef.current[0]?.id;
     const firstNode = nodes.find(n => n.id === firstScreenId) || nodes.find(n => n.data.html); 
 
@@ -887,26 +983,36 @@ export default function Home() {
          onExpand: handleExpand, 
          onShowCode: handleShowCode, 
          onFocus: handleFocus, 
-         viewMode,
-         isSelected: n.id === selectedScreenId
+         viewMode
        }
      })));
-  }, [handleExpand, handleShowCode, handleFocus, viewMode, setNodes, selectedScreenId]);
+  }, [handleExpand, handleShowCode, handleFocus, viewMode, setNodes]);
 
   const isLastMessageInteractive = () => {
       if (messages.length === 0) return false;
       const lastMsg = messages[messages.length - 1];
       if (lastMsg.role === 'assistant') {
           if (lastMsg.question && !lastMsg.submittedAnswer) return true;
+          if (lastMsg.isDesignSystemReady && !lastMsg.submittedDesignSystem) return true;
           if (lastMsg.isPlanReady && !isRefiningPlan) return true;
       }
       return false;
   };
 
   const isInputDisabled = isLoading || isLastMessageInteractive();
+  const isGenerationComplete = !isLoading && !nodes.some(n => n.data.isGenerating);
+
+  const SUGGESTIONS = [
+    { title: "SaaS Dashboard", prompt: "A modern analytics dashboard for a SaaS platform with dark mode, charts, and user management." },
+    { title: "Social Mobile App", prompt: "A social networking mobile app focused on sharing travel itineraries and photos with friends." },
+    { title: "Portfolio Website", prompt: "A minimalist portfolio website for a digital artist with gallery grid and contact form." },
+    { title: "E-commerce Store", prompt: "A clean, modern e-commerce store for high-end furniture with product filtering and cart." },
+    { title: "Task Management", prompt: "A collaborative task management tool with boards, lists, and team chat features." },
+    { title: "Fitness Tracker", prompt: "A mobile-first fitness tracking app with workout plans, progress visualization and social challenges." }
+  ];
 
   return (
-    <div className="relative h-screen w-full bg-[#1e1e1e] text-[#d4d4d4] overflow-hidden">
+    <div className="relative h-screen w-full bg-[#1e1e1e] text-[#d4d4d4] overflow-hidden font-mono">
       <AnimatePresence mode="wait">
         {!hasStarted && (
           <motion.div 
@@ -916,31 +1022,31 @@ export default function Home() {
             transition={{ duration: 0.8, ease: "easeInOut" }}
             className="absolute inset-0 flex items-center justify-center p-4 z-20 bg-[#1e1e1e]"
           >
-             <div className="max-w-2xl w-full flex flex-col items-center space-y-8">
-                <div className="text-center space-y-4">
+             <div className="max-w-4xl w-full flex flex-col items-center space-y-12">
+                <div className="text-center space-y-6">
                    <motion.div 
                      initial={{ scale: 0.9, opacity: 0, filter: 'blur(10px)' }}
                      animate={{ scale: 1, opacity: 1, filter: 'blur(0px)' }}
                      transition={{ delay: 0.1, duration: 0.8 }}
-                     className="w-16 h-16 bg-blue-500/10 rounded-2xl flex items-center justify-center mx-auto mb-6 ring-1 ring-blue-500/30"
+                     className="w-20 h-20 bg-zinc-900/50 rounded-2xl flex items-center justify-center mx-auto mb-8 border border-zinc-800"
                    >
-                      <AiPaintbrush size={32} className="text-blue-500" />
+                      <Terminal size={40} className="text-zinc-100" />
                    </motion.div>
                    <motion.h1 
                      initial={{ y: 10, opacity: 0, filter: 'blur(10px)' }}
                      animate={{ y: 0, opacity: 1, filter: 'blur(0px)' }}
                      transition={{ delay: 0.2, duration: 0.8 }}
-                     className="text-4xl font-bold text-white tracking-tight"
+                     className="text-5xl md:text-6xl font-bold text-white tracking-tight"
                    >
-                     What are we building today?
+                     SYSTEM_INIT
                    </motion.h1>
                    <motion.p 
                      initial={{ y: 10, opacity: 0, filter: 'blur(10px)' }}
                      animate={{ y: 0, opacity: 1, filter: 'blur(0px)' }}
                      transition={{ delay: 0.3, duration: 0.8 }}
-                     className="text-lg text-zinc-400 max-w-md mx-auto"
+                     className="text-xl text-zinc-500 max-w-lg mx-auto"
                    >
-                     Describe your dream app. I will architect the user journey and design every screen in real-time.
+                     Initialize generation sequence. Describe target application parameters.
                    </motion.p>
                 </div>
 
@@ -948,36 +1054,75 @@ export default function Home() {
                   initial={{ y: 20, opacity: 0, filter: 'blur(10px)' }}
                   animate={{ y: 0, opacity: 1, filter: 'blur(0px)' }}
                   transition={{ delay: 0.4, duration: 0.8 }}
-                  className="w-full relative"
+                  className="w-full max-w-2xl relative"
                 >
                   <form onSubmit={sendMessage}>
-                    <input
-                      type="text"
-                      value={input}
-                      onChange={(e) => setInput(e.target.value)}
-                      placeholder="e.g. A marketplace for vintage watches with bidding..."
-                      className="w-full bg-[#252526] border border-[#3e3e42] text-sm text-white rounded-xl py-4 pl-5 pr-12 focus:outline-none focus:border-[#007acc] focus:ring-4 focus:ring-[#007acc]/10 transition-all placeholder:text-zinc-600 shadow-2xl"
-                      autoFocus
-                    />
-                    <button 
-                      type="submit"
-                      disabled={!input.trim()}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 p-2 bg-[#007acc] hover:bg-[#0062a3] rounded-lg text-white transition-colors disabled:opacity-0 disabled:pointer-events-none cursor-pointer"
-                    >
-                      <Send size={18} />
-                    </button>
+                    <div className="relative group">
+                      <div className="absolute -inset-1 bg-gradient-to-r from-blue-600 to-cyan-600 rounded-lg blur opacity-20 group-hover:opacity-40 transition duration-1000 group-hover:duration-200"></div>
+                      <div className="relative">
+                        <span className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500 font-bold">{'>'}</span>
+                        <input
+                          type="text"
+                          value={input}
+                          onChange={(e) => setInput(e.target.value)}
+                          placeholder="Describe your app..."
+                          className="w-full bg-[#0a0a0a] border border-[#333] text-lg text-white rounded-lg py-6 pl-10 pr-14 focus:outline-none focus:border-zinc-500 focus:ring-0 transition-all placeholder:text-zinc-700 shadow-2xl font-mono"
+                          autoFocus
+                        />
+                        {isLoading || !input.trim() ? (
+                          <button 
+                            type="button"
+                            className="absolute right-4 top-1/2 -translate-y-1/2 p-2 text-zinc-700 cursor-not-allowed"
+                            disabled
+                          >
+                            <Send size={20} />
+                          </button>
+                        ) : (
+                          <button 
+                            type="submit"
+                            className="absolute right-4 top-1/2 -translate-y-1/2 p-2 text-white hover:text-blue-400 transition-colors cursor-pointer"
+                          >
+                            <Send size={20} />
+                          </button>
+                        )}
+                      </div>
+                    </div>
                   </form>
                 </motion.div>
                 
                 <motion.div 
-                  initial={{ opacity: 0, filter: 'blur(10px)' }}
-                  animate={{ opacity: 1, filter: 'blur(0px)' }}
-                  transition={{ delay: 0.5, duration: 0.8 }}
-                  className="flex gap-4 text-sm text-zinc-500"
+                   initial={{ opacity: 0, y: 20 }}
+                   animate={{ opacity: 1, y: 0 }}
+                   transition={{ delay: 0.6, duration: 0.8 }}
+                   className="w-full max-w-5xl grid grid-cols-1 md:grid-cols-3 gap-4 pt-4"
                 >
-                   <span className="flex items-center gap-1"><Play size={12}/> Gemini 3.0 Pro</span>
-                   <span className="flex items-center gap-1"><CodeIcon size={12}/> React Flow</span>
-                   <span className="flex items-center gap-1"><Terminal size={12}/> Tailwind CSS</span>
+                   {SUGGESTIONS.map((s, i) => (
+                     <motion.button
+                       key={s.title}
+                       initial={{ opacity: 0, y: 10 }}
+                       animate={{ opacity: 1, y: 0 }}
+                       transition={{ delay: 0.7 + (i * 0.05), duration: 0.5 }}
+                       onClick={() => setInput(s.prompt)}
+                       className="group relative p-5 bg-[#0a0a0a] border border-[#333] hover:border-zinc-500 rounded-xl text-left transition-all hover:bg-[#111] cursor-pointer overflow-hidden"
+                     >
+                        <div className="absolute top-0 right-0 p-2 opacity-0 group-hover:opacity-100 transition-opacity text-zinc-600">
+                           <ChevronRight size={16} />
+                        </div>
+                        <h3 className="font-bold text-zinc-300 mb-2 group-hover:text-white transition-colors">{s.title}</h3>
+                        <p className="text-xs text-zinc-600 leading-relaxed group-hover:text-zinc-500 transition-colors line-clamp-2">
+                          {s.prompt}
+                        </p>
+                     </motion.button>
+                   ))}
+                </motion.div>
+
+                <motion.div 
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  transition={{ delay: 0.8, duration: 1 }}
+                  className="absolute bottom-8 text-[10px] text-zinc-700 uppercase tracking-widest"
+                >
+                   v3.0.0 • SYSTEM_READY
                 </motion.div>
              </div>
           </motion.div>
@@ -1045,6 +1190,15 @@ export default function Home() {
                             startIndex={msg.questionIndex || 1}
                           />
                        )}
+
+                       {/* Design System Selector */}
+                       {msg.designSystemOptions && (msg.isDesignSystemReady || msg.submittedDesignSystem) && (
+                          <DesignSystemSelector
+                            options={msg.designSystemOptions}
+                            onSubmit={msg.isDesignSystemReady ? handleDesignSystemSelect : undefined}
+                            submittedSelection={msg.submittedDesignSystem}
+                          />
+                       )}
     
                        {/* Plan Review - with approved state */}
                        {msg.plannedScreens && (msg.isPlanReady || msg.isArchitectureApproved) && (
@@ -1059,6 +1213,22 @@ export default function Home() {
                        {/* Design Steps */}
                        {msg.designSteps && msg.designSteps.length > 0 && (
                           <ProcessSteps steps={msg.designSteps} />
+                       )}
+
+                       {/* Completion Message */}
+                       {msg.completionMessage && (
+                         <div className="text-[11px] text-zinc-400 leading-relaxed mt-2">
+                           <ReactMarkdown
+                             components={{
+                               p: ({children}) => <p className="mb-2">{children}</p>,
+                               strong: ({children}) => <span className="text-zinc-300 font-medium">{children}</span>,
+                               ul: ({children}) => <ul className="list-disc list-inside mb-2">{children}</ul>,
+                               li: ({children}) => <li className="text-zinc-400">{children}</li>,
+                             }}
+                           >
+                             {msg.completionMessage}
+                           </ReactMarkdown>
+                         </div>
                        )}
     
                        {/* Welcome message */}
@@ -1077,55 +1247,68 @@ export default function Home() {
             </div>
     
             <div className="p-4 border-t border-[#3e3e42] bg-[#1e1e1e] shrink-0 w-[400px]">
-              {selectedScreenId && (
-                 <div className="flex items-center gap-2 mb-3 px-1 animate-in fade-in slide-in-from-bottom-2 duration-200">
-                    <div className="bg-[#007acc]/20 text-blue-200 text-[10px] px-2 py-1 rounded border border-[#007acc]/30 flex items-center gap-2 max-w-full">
-                       <span className="opacity-70">Target:</span>
-                       <span className="font-medium truncate">
-                          {nodes.find(n => n.id === selectedScreenId)?.data?.label as string || 'Unknown Screen'}
-                       </span>
-                       <button 
-                         onClick={() => setSelectedScreenId(null)}
-                         className="hover:text-white ml-1 p-0.5 hover:bg-blue-500/20 rounded transition-colors cursor-pointer"
-                       >
-                         <X size={12} />
-                       </button>
-                    </div>
-                 </div>
+              {nodes.length === 0 ? (
+                <form onSubmit={sendMessage} className="relative group">
+                  <input
+                    ref={inputRef}
+                    type="text"
+                    value={input}
+                    onChange={(e) => setInput(e.target.value)}
+                    onBlur={handleInputBlur}
+                    placeholder={isInputDisabled ? "Write here.." : "Reply or refine..."}
+                    disabled={isInputDisabled}
+                    className={`w-full bg-[#252526] border border-[#3e3e42] text-[12px] text-[#d4d4d4] rounded-lg py-3 pl-4 pr-10 focus:outline-none transition-all placeholder:text-[#52525b]
+                       ${isInputDisabled ? 'opacity-50 cursor-not-allowed' : 'focus:border-[#007acc]'}
+                       ${isRefiningPlan ? 'border-blue-500/50 ring-1 ring-blue-500/20 bg-blue-500/5' : ''}
+                    `}
+                  />
+                  
+                  {isLoading || !input.trim() ? (
+                    <button 
+                      type="button"
+                      className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 text-zinc-600 cursor-not-allowed"
+                      disabled
+                    >
+                      <Send size={16} />
+                    </button>
+                  ) : (
+                    <button 
+                      type="submit"
+                      disabled={isInputDisabled}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 text-[#858585] hover:text-white transition-colors cursor-pointer"
+                    >
+                      <Send size={16} />
+                    </button>
+                  )}
+                </form>
+              ) : (
+                <div className="flex items-center gap-2 w-full">
+                  <button 
+                    id="btn-export-ds"
+                    onClick={handleExportDesignSystem}
+                    disabled={!isGenerationComplete}
+                    className="flex-1 h-9 bg-[#252526] hover:bg-[#3e3e42] border border-[#3e3e42] text-[11px] text-zinc-300 rounded-lg flex items-center justify-center gap-2 transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                  >
+                    <Palette size={14} />
+                    <span>Export Design System</span>
+                  </button>
+                  <button 
+                    onClick={handleExportZip}
+                    disabled={!isGenerationComplete}
+                    className="flex-1 h-9 bg-[#252526] hover:bg-[#3e3e42] border border-[#3e3e42] text-[11px] text-zinc-300 rounded-lg flex items-center justify-center gap-2 transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                  >
+                    <Download size={14} />
+                    <span>Export Screens</span>
+                  </button>
+                  <button
+                    onClick={() => setIsResetModalOpen(true)}
+                    className="h-9 w-9 bg-[#252526] hover:bg-red-500/10 border border-[#3e3e42] hover:border-red-500/50 text-zinc-400 hover:text-red-400 rounded-lg flex items-center justify-center transition-all group cursor-pointer"
+                    title="Reset Project"
+                  >
+                    <RotateCcw size={14} className="group-hover:-rotate-180 transition-transform duration-500" />
+                  </button>
+                </div>
               )}
-              <form onSubmit={sendMessage} className="relative group">
-                <input
-                  ref={inputRef}
-                  type="text"
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  onBlur={handleInputBlur}
-                  placeholder={isInputDisabled ? "Waiting for response..." : "Reply or refine..."}
-                  disabled={isInputDisabled}
-                  className={`w-full bg-[#252526] border border-[#3e3e42] text-[12px] text-[#d4d4d4] rounded-lg py-3 pl-4 pr-10 focus:outline-none transition-all placeholder:text-[#52525b]
-                     ${isInputDisabled ? 'opacity-50 cursor-not-allowed' : 'focus:border-[#007acc]'}
-                     ${isRefiningPlan ? 'border-blue-500/50 ring-1 ring-blue-500/20 bg-blue-500/5' : ''}
-                  `}
-                />
-                
-                {isLoading ? (
-                  <button 
-                    type="button"
-                    onClick={handleStop}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 text-red-400 hover:text-red-300 transition-colors cursor-pointer"
-                  >
-                    <Square size={16} fill="currentColor" />
-                  </button>
-                ) : (
-                  <button 
-                    type="submit"
-                    disabled={!input.trim() || isInputDisabled}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 text-[#858585] hover:text-white transition-colors cursor-pointer"
-                  >
-                    <Send size={16} />
-                  </button>
-                )}
-              </form>
             </div>
           </motion.div>
     
@@ -1190,36 +1373,7 @@ export default function Home() {
                 </button>
               </div>
 
-              {/* Export Menu */}
-              <div className="absolute top-6 right-6 z-50 flex flex-col items-end">
-                <button
-                  onClick={() => setIsExportOpen(!isExportOpen)}
-                  className="bg-[#252526]/90 backdrop-blur-md border border-[#3e3e42] p-2 rounded-full shadow-xl text-zinc-400 hover:text-white transition-all cursor-pointer"
-                  title="Export Project"
-                >
-                  <Download size={20} />
-                </button>
-
-                {isExportOpen && (
-                  <div className="mt-2 bg-[#252526] border border-[#3e3e42] rounded-xl shadow-xl overflow-hidden w-48 flex flex-col animate-in fade-in slide-in-from-top-2 duration-200">
-                    <button 
-                      id="btn-export-ds"
-                      onClick={handleExportDesignSystem}
-                      className="px-4 py-3 text-left text-sm text-zinc-300 hover:bg-[#3e3e42] hover:text-white transition-colors border-b border-[#3e3e42] cursor-pointer"
-                    >
-                      Export Design System
-                      <span className="block text-[10px] text-zinc-500 mt-0.5">Markdown + Ref HTML</span>
-                    </button>
-                    <button 
-                      onClick={handleExportZip}
-                      className="px-4 py-3 text-left text-sm text-zinc-300 hover:bg-[#3e3e42] hover:text-white transition-colors cursor-pointer"
-                    >
-                      Export All Screens
-                      <span className="block text-[10px] text-zinc-500 mt-0.5">Download .zip</span>
-                    </button>
-                  </div>
-                )}
-              </div>
+              {/* Export Menu (Removed) */}
 
             </div>
           </motion.div>
@@ -1397,6 +1551,39 @@ export default function Home() {
                >
                  {codeModalContent}
                </SyntaxHighlighter>
+            </div>
+          </div>
+        </div>
+      )}
+
+       {/* RESET CONFIRMATION MODAL */}
+       {isResetModalOpen && (
+        <div className="absolute inset-0 z-[60] bg-black/80 flex items-center justify-center backdrop-blur-sm p-4 animate-in fade-in duration-200">
+          <div className="bg-[#1e1e1e] w-full max-w-md rounded-xl border border-[#3e3e42] shadow-2xl flex flex-col overflow-hidden">
+            <div className="p-6 space-y-4">
+              <div className="w-12 h-12 bg-red-500/10 rounded-full flex items-center justify-center mx-auto text-red-400">
+                <RotateCcw size={24} />
+              </div>
+              <div className="text-center space-y-2">
+                <h3 className="text-lg font-semibold text-white">Reset Project?</h3>
+                <p className="text-sm text-zinc-400">
+                  This will permanently delete all generated screens, chat history, and current progress. You will be returned to the start screen.
+                </p>
+              </div>
+            </div>
+            <div className="p-4 bg-[#252526] border-t border-[#3e3e42] flex items-center gap-3">
+              <button 
+                onClick={() => setIsResetModalOpen(false)}
+                className="flex-1 px-4 py-2.5 text-sm font-medium text-zinc-300 hover:text-white bg-transparent hover:bg-[#3e3e42] rounded-lg transition-colors"
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={handleReset}
+                className="flex-1 px-4 py-2.5 text-sm font-medium text-white bg-red-600 hover:bg-red-500 rounded-lg transition-colors shadow-lg shadow-red-900/20"
+              >
+                Reset Everything
+              </button>
             </div>
           </div>
         </div>
