@@ -1007,8 +1007,6 @@ export default function Home() {
     { title: "Social Mobile App", prompt: "A social networking mobile app focused on sharing travel itineraries and photos with friends." },
     { title: "Portfolio Website", prompt: "A minimalist portfolio website for a digital artist with gallery grid and contact form." },
     { title: "E-commerce Store", prompt: "A clean, modern e-commerce store for high-end furniture with product filtering and cart." },
-    { title: "Task Management", prompt: "A collaborative task management tool with boards, lists, and team chat features." },
-    { title: "Fitness Tracker", prompt: "A mobile-first fitness tracking app with workout plans, progress visualization and social challenges." }
   ];
 
   return (
@@ -1018,97 +1016,81 @@ export default function Home() {
           <motion.div 
             key="landing"
             initial={{ opacity: 1 }}
-            exit={{ opacity: 0, y: -20, filter: 'blur(10px)' }}
-            transition={{ duration: 0.8, ease: "easeInOut" }}
-            className="absolute inset-0 flex items-center justify-center p-4 z-20 bg-[#1e1e1e]"
+            exit={{ opacity: 0, scale: 0.98 }}
+            transition={{ duration: 0.4, ease: "easeOut" }}
+            className="absolute inset-0 flex items-center justify-center p-6 z-20 bg-[#1e1e1e]"
           >
-             <div className="max-w-4xl w-full flex flex-col items-center space-y-12">
-                 <div className="text-center space-y-4">
+             <div className="w-full max-w-xl flex flex-col items-center gap-8">
+                 {/* Header */}
+                 <div className="text-center space-y-3">
                    <motion.div 
-                     initial={{ scale: 0.9, opacity: 0, filter: 'blur(10px)' }}
-                     animate={{ scale: 1, opacity: 1, filter: 'blur(0px)' }}
-                     transition={{ delay: 0.1, duration: 0.8 }}
-                     className="w-12 h-12 bg-blue-500/10 rounded-xl flex items-center justify-center mx-auto mb-4 ring-1 ring-blue-500/20"
+                     initial={{ opacity: 0, y: 8 }}
+                     animate={{ opacity: 1, y: 0 }}
+                     transition={{ duration: 0.5 }}
+                     className="flex items-center justify-center gap-2.5"
                    >
-                      <AiPaintbrush size={24} className="text-blue-500" />
+                      <div className="w-9 h-9 bg-blue-500/10 border border-blue-500/20 rounded-xl flex items-center justify-center">
+                        <AiPaintbrush size={18} className="text-blue-400" />
+                      </div>
+                      <h1 className="text-xl font-semibold text-zinc-100">Draftly</h1>
                    </motion.div>
-                   <motion.h1 
-                     initial={{ y: 10, opacity: 0, filter: 'blur(10px)' }}
-                     animate={{ y: 0, opacity: 1, filter: 'blur(0px)' }}
-                     transition={{ delay: 0.2, duration: 0.8 }}
-                     className="text-2xl font-bold text-zinc-100 tracking-tight"
-                   >
-                     Draftly
-                   </motion.h1>
                    <motion.p 
-                     initial={{ y: 10, opacity: 0, filter: 'blur(10px)' }}
-                     animate={{ y: 0, opacity: 1, filter: 'blur(0px)' }}
-                     transition={{ delay: 0.3, duration: 0.8 }}
-                     className="text-sm text-zinc-400 max-w-sm mx-auto"
+                     initial={{ opacity: 0, y: 8 }}
+                     animate={{ opacity: 1, y: 0 }}
+                     transition={{ duration: 0.5, delay: 0.1 }}
+                     className="text-xs text-zinc-500"
                    >
-                     Describe your app to generate screens.
+                     Describe your app idea and get instant UI designs
                    </motion.p>
                 </div>
 
-                <motion.div 
-                  initial={{ y: 20, opacity: 0, filter: 'blur(10px)' }}
-                  animate={{ y: 0, opacity: 1, filter: 'blur(0px)' }}
-                  transition={{ delay: 0.4, duration: 0.8 }}
-                  className="w-full max-w-xl relative"
+                {/* Input */}
+                <motion.form 
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.5, delay: 0.15 }}
+                  onSubmit={sendMessage}
+                  className="w-full"
                 >
-                  <form onSubmit={sendMessage}>
-                    <div className="relative">
-                      <input
-                        type="text"
-                        value={input}
-                        onChange={(e) => setInput(e.target.value)}
-                        placeholder="e.g. A CRM dashboard..."
-                        className="w-full bg-[#252526] border border-[#3e3e42] text-sm text-zinc-200 rounded-lg px-4 py-3 focus:outline-none focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/20 transition-all placeholder:text-zinc-500"
-                        autoFocus
-                      />
-                      {isLoading || !input.trim() ? (
-                        <button 
-                          type="button"
-                          className="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 text-zinc-600 cursor-not-allowed"
-                          disabled
-                        >
-                          <Send size={16} />
-                        </button>
-                      ) : (
-                        <button 
-                          type="submit"
-                          className="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 text-zinc-400 hover:text-blue-400 transition-colors cursor-pointer"
-                        >
-                          <Send size={16} />
-                        </button>
-                      )}
-                    </div>
-                  </form>
-                </motion.div>
+                  <div className="relative">
+                    <input
+                      type="text"
+                      value={input}
+                      onChange={(e) => setInput(e.target.value)}
+                      placeholder="Describe your app..."
+                      className="w-full h-11 bg-[#252526] border border-[#3e3e42] text-xs text-zinc-200 rounded-lg px-4 pr-11 focus:outline-none focus:border-blue-500/40 focus:ring-1 focus:ring-blue-500/20 transition-all placeholder:text-zinc-600"
+                      autoFocus
+                    />
+                    <button 
+                      type="submit"
+                      disabled={isLoading || !input.trim()}
+                      className="absolute right-1.5 top-1/2 -translate-y-1/2 w-8 h-8 rounded-md flex items-center justify-center text-zinc-500 hover:text-blue-400 hover:bg-blue-500/10 disabled:text-zinc-700 disabled:hover:bg-transparent transition-colors cursor-pointer disabled:cursor-not-allowed"
+                    >
+                      <Send size={14} />
+                    </button>
+                  </div>
+                </motion.form>
                 
+                {/* Suggestions */}
                 <motion.div 
-                   initial={{ opacity: 0, y: 20 }}
+                   initial={{ opacity: 0, y: 8 }}
                    animate={{ opacity: 1, y: 0 }}
-                   transition={{ delay: 0.6, duration: 0.8 }}
-                   className="w-full max-w-xl grid grid-cols-1 md:grid-cols-3 gap-3"
+                   transition={{ duration: 0.5, delay: 0.2 }}
+                   className="w-full space-y-2"
                 >
-                   {SUGGESTIONS.map((s, i) => (
-                     <motion.button
-                       key={s.title}
-                       initial={{ opacity: 0, y: 10 }}
-                       animate={{ opacity: 1, y: 0 }}
-                       transition={{ delay: 0.7 + (i * 0.05), duration: 0.5 }}
-                       onClick={() => setInput(s.prompt)}
-                       className="group p-3 bg-[#252526] border border-[#3e3e42] hover:border-zinc-500 rounded-lg text-left transition-all cursor-pointer"
-                     >
-                        <h3 className="font-medium text-xs text-zinc-200 mb-1">{s.title}</h3>
-                        <p className="text-[10px] text-zinc-500 leading-relaxed line-clamp-2 group-hover:text-zinc-400 transition-colors">
-                          {s.prompt}
-                        </p>
-                     </motion.button>
-                   ))}
+                   <p className="text-[10px] text-zinc-600 uppercase tracking-wider px-1 text-center">Try an example</p>
+                   <div className="flex flex-wrap justify-center gap-2">
+                     {SUGGESTIONS.map((s) => (
+                       <button
+                         key={s.title}
+                         onClick={() => setInput(s.prompt)}
+                         className="px-3 py-1.5 bg-[#252526] hover:bg-[#3e3e42] border border-[#3e3e42] rounded-full text-[11px] text-zinc-400 hover:text-zinc-200 transition-all cursor-pointer"
+                       >
+                          {s.title}
+                       </button>
+                     ))}
+                   </div>
                 </motion.div>
-
              </div>
           </motion.div>
         )}
@@ -1218,11 +1200,8 @@ export default function Home() {
     
                        {/* Welcome message */}
                        {msg.content === 'Hey ! How can i help you design your app today ?' && (
-                         <div className="mb-2 px-4 py-3 bg-[#1e1e1e] rounded-xl border border-[#3e3e42]">
-                           <h2 className="text-lg font-semibold text-white tracking-tight flex items-start gap-3 font-sans">
-                             <span className="text-xl mt-0.5">👋</span>
-                             Hey ! How can I help you design your app today ?
-                           </h2>
+                         <div className="px-3 py-2.5 bg-[#1e1e1e] rounded-lg border border-[#3e3e42]">
+                           <p className="text-xs text-zinc-300">How can I help you design your app?</p>
                          </div>
                        )}
                     </div>
