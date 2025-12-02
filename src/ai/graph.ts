@@ -23,6 +23,37 @@ export interface ScreenFlow {
   label: string;
 }
 
+export interface FontOption {
+  id: string;
+  name: string;
+  googleFontName: string;
+  category: string;
+  reason: string;
+}
+
+export interface ColorPalette {
+  id: string;
+  name: string;
+  colors: {
+    primary: string;
+    secondary: string;
+    accent: string;
+    background: string;
+    text: string;
+  };
+  reason: string;
+}
+
+export interface DesignSystemOptions {
+  fonts: FontOption[];
+  palettes: ColorPalette[];
+}
+
+export interface DesignSystemSelection {
+  font: FontOption;
+  palette: ColorPalette;
+}
+
 // --- State ---
 
 export const AgentState = Annotation.Root({
@@ -46,6 +77,19 @@ export const AgentState = Annotation.Root({
   enrichedRequest: Annotation<string>({
     reducer: (_, y) => y,
     default: () => "",
+  }),
+  // Design System state
+  designSystemOptions: Annotation<DesignSystemOptions | null>({
+    reducer: (_, y) => y,
+    default: () => null,
+  }),
+  selectedDesignSystem: Annotation<DesignSystemSelection | null>({
+    reducer: (_, y) => y,
+    default: () => null,
+  }),
+  designSystemComplete: Annotation<boolean>({
+    reducer: (_, y) => y,
+    default: () => false,
   }),
   designApproved: Annotation<boolean>({
     reducer: (_, y) => y,
@@ -78,10 +122,6 @@ export const AgentState = Annotation.Root({
   generatedScreens: Annotation<Array<{ id: string; name: string; html: string }>>({
     reducer: (x, y) => x.concat(y),
     default: () => [],
-  }),
-  contextScreen: Annotation<{ id: string; name: string; html: string } | undefined>({
-    reducer: (_, y) => y,
-    default: () => undefined,
   }),
 });
 
@@ -121,7 +161,7 @@ async function invokeLLM(prompt: string): Promise<string> {
 
 // Node 0: Clarifier (Conversational - one question at a time)
 async function clarifierNode(state: typeof AgentState.State) {
-  const { userRequest, conversationHistory, skipToPlanning, planFeedback, enrichedRequest, designApproved, contextScreen } = state;
+  const { userRequest, conversationHistory, skipToPlanning, planFeedback, enrichedRequest, designApproved } = state;
   
   if (designApproved) {
     return {
@@ -169,24 +209,9 @@ async function clarifierNode(state: typeof AgentState.State) {
       }).join('\n\n')
     : 'No previous questions yet.';
 
-  let contextSection = "";
-  if (contextScreen) {
-    contextSection = `
-CONTEXT SCREEN (User is referring to this screen):
-Name: ${contextScreen.name}
-ID: ${contextScreen.id}
-Current HTML:
-\`\`\`html
-${contextScreen.html.substring(0, 20000)}... (truncated)
-\`\`\`
-`;
-  }
-
   const prompt = `You are a Product Discovery Expert helping to understand an app idea before designing it.
 
 ORIGINAL USER REQUEST: "${userRequest}"
-
-${contextSection}
 
 CONVERSATION SO FAR:
 ${historyText}
@@ -280,9 +305,109 @@ OR if ready to design:
   };
 }
 
+// Node: Design System Generator
+async function designSystemNode(state: typeof AgentState.State) {
+  const { userRequest, enrichedRequest, designSystemComplete, selectedDesignSystem, planFeedback, designApproved } = state;
+  
+  // Skip if already complete or if we're in plan feedback/design approved mode
+  if (designSystemComplete || selectedDesignSystem || planFeedback || designApproved) {
+    return {
+      designSystemComplete: true,
+    };
+  }
+  
+  const requestToUse = enrichedRequest || userRequest;
+  
+  const prompt = `You are an expert UI/UX Designer specializing in Design Systems.
+
+USER PROJECT: "${requestToUse}"
+
+YOUR TASK: Generate design system options tailored to this specific project.
+
+Based on the project's nature, target audience, and industry, suggest:
+
+1. **FONTS**: 4 Google Fonts that would work perfectly for this type of application
+   - Consider readability, personality, and professionalism
+   - Mix of heading and body fonts where appropriate
+   - Must be real Google Fonts names (exactly as they appear on fonts.google.com)
+
+2. **COLOR PALETTES**: 4 distinct color schemes that match the project's vibe
+   - Each palette should have a unique personality/mood
+   - Colors must be in HEX format
+   - Consider accessibility and contrast ratios
+
+FORMAT YOUR RESPONSE:
+
+<thinking>
+[Analyze the project type, target users, industry standards, and what visual language would resonate best]
+</thinking>
+
+\`\`\`json
+{
+  "fonts": [
+    {
+      "id": "font_1",
+      "name": "Display Name",
+      "googleFontName": "Exact Google Font Name",
+      "category": "Sans-serif|Serif|Display|Monospace",
+      "reason": "Brief reason why this font fits the project"
+    }
+  ],
+  "palettes": [
+    {
+      "id": "palette_1",
+      "name": "Palette Name (e.g., 'Ocean Breeze', 'Corporate Trust')",
+      "colors": {
+        "primary": "#hexcode",
+        "secondary": "#hexcode",
+        "accent": "#hexcode",
+        "background": "#hexcode",
+        "text": "#hexcode"
+      },
+      "reason": "Brief reason why this palette fits the project"
+    }
+  ]
+}
+\`\`\`
+
+IMPORTANT:
+- Font names must be EXACTLY as they appear on Google Fonts (case-sensitive)
+- All colors must be valid hex codes
+- Each option should be genuinely different, not just variations
+- Respond in the SAME LANGUAGE as the user's request
+`;
+
+  try {
+    const content = await invokeLLM(prompt);
+    
+    const jsonMatch = content.match(/```json\n([\s\S]*?)\n```/) || content.match(/\{[\s\S]*\}/);
+    
+    if (jsonMatch) {
+      const jsonStr = jsonMatch[1] || jsonMatch[0];
+      const parsed = JSON.parse(jsonStr);
+      
+      return {
+        designSystemOptions: {
+          fonts: parsed.fonts || [],
+          palettes: parsed.palettes || [],
+        },
+        designSystemComplete: false,
+      };
+    }
+  } catch (e) {
+    console.error("[DesignSystem] Error:", e);
+  }
+  
+  // Fallback - skip design system selection
+  return {
+    designSystemComplete: true,
+    designSystemOptions: null,
+  };
+}
+
 // Node 1: Architecte (Thinking + Planning)
 async function architectNode(state: typeof AgentState.State) {
-  const { userRequest, enrichedRequest, planFeedback, plannedScreens: existingScreens, plannedFlows: existingFlows, designApproved, contextScreen } = state;
+  const { userRequest, enrichedRequest, planFeedback, plannedScreens: existingScreens, plannedFlows: existingFlows, designApproved } = state;
   const requestToUse = enrichedRequest || userRequest;
   
   const hasFeedback = planFeedback && planFeedback.trim().length > 0;
@@ -310,18 +435,6 @@ ${existingFlowsText}
 USER FEEDBACK ON THIS PLAN: "${planFeedback}"
 
 You must UPDATE the plan based on this feedback. Add, remove, or modify screens and flows as requested.
-`;
-  }
-
-  if (contextScreen) {
-    feedbackSection += `
-CONTEXT SCREEN (User is specifically referring to this screen):
-Name: ${contextScreen.name}
-ID: ${contextScreen.id}
-Current HTML:
-\`\`\`html
-${contextScreen.html.substring(0, 20000)}... (truncated)
-\`\`\`
 `;
   }
   
@@ -404,7 +517,7 @@ This creates a proper tree visualization, NOT a linear chain.
 
 // Node 2: Designer (generates ONE screen at a time)
 async function designerNode(state: typeof AgentState.State) {
-  const { plannedScreens, userRequest, enrichedRequest, currentScreenIndex, referenceHtml, generatedScreens } = state;
+  const { plannedScreens, userRequest, enrichedRequest, currentScreenIndex, referenceHtml, generatedScreens, selectedDesignSystem } = state;
   const requestToUse = enrichedRequest || userRequest;
   
   const screen = plannedScreens[currentScreenIndex];
@@ -419,12 +532,30 @@ async function designerNode(state: typeof AgentState.State) {
   
   const isFirstScreen = currentScreenIndex === 0;
   
+  // Build design system instructions if user selected one
+  let designSystemInstructions = '';
+  if (selectedDesignSystem) {
+    const { font, palette } = selectedDesignSystem;
+    designSystemInstructions = `
+MANDATORY DESIGN SYSTEM (User Selected):
+- **Font**: Use "${font.googleFontName}" from Google Fonts as the primary font family
+- **Color Palette** "${palette.name}":
+  - Primary: ${palette.colors.primary}
+  - Secondary: ${palette.colors.secondary}
+  - Accent: ${palette.colors.accent}
+  - Background: ${palette.colors.background}
+  - Text: ${palette.colors.text}
+
+You MUST apply this exact font and color scheme throughout the design. Import the font from Google Fonts in the <head>.
+`;
+  }
+  
   const basePrompt = `You are an elite UI/UX Designer creating production-ready interfaces.
 
 USER REQUEST: "${requestToUse}"
 SCREEN: ${screen.name}
 DESCRIPTION: ${screen.description}
-
+${designSystemInstructions}
 DESIGN REQUIREMENTS:
 
 Context-Adaptive Excellence: Create a highly polished, production-grade design that perfectly matches the specific nature of the request. Whether it is a game interface, a dashboard, or a landing page, automatically select the most appropriate layout, color palette, and typography to create a stunning visual experience.
@@ -529,14 +660,33 @@ async function saveScreenNode(state: typeof AgentState.State) {
 function buildScreenPrompt(
   screen: { id: string; name: string; description: string },
   referenceHtml: string,
-  requestToUse: string
+  requestToUse: string,
+  selectedDesignSystem?: DesignSystemSelection | null
 ): string {
+  // Build design system instructions if user selected one
+  let designSystemInstructions = '';
+  if (selectedDesignSystem) {
+    const { font, palette } = selectedDesignSystem;
+    designSystemInstructions = `
+MANDATORY DESIGN SYSTEM (User Selected):
+- **Font**: Use "${font.googleFontName}" from Google Fonts as the primary font family
+- **Color Palette** "${palette.name}":
+  - Primary: ${palette.colors.primary}
+  - Secondary: ${palette.colors.secondary}
+  - Accent: ${palette.colors.accent}
+  - Background: ${palette.colors.background}
+  - Text: ${palette.colors.text}
+
+You MUST apply this exact font and color scheme throughout the design.
+`;
+  }
+
   return `You are an elite UI/UX Designer creating production-ready interfaces.
 
 USER REQUEST: "${requestToUse}"
 SCREEN: ${screen.name}
 DESCRIPTION: ${screen.description}
-
+${designSystemInstructions}
 DESIGN REQUIREMENTS:
 
 Context-Adaptive Excellence: Create a highly polished, production-grade design that perfectly matches the specific nature of the request. Whether it is a game interface, a dashboard, or a landing page, automatically select the most appropriate layout, color palette, and typography to create a stunning visual experience.
@@ -590,9 +740,10 @@ No markdown blocks, just raw HTML.`;
 async function generateScreenHtmlWithTag(
   screen: { id: string; name: string; description: string },
   referenceHtml: string,
-  requestToUse: string
+  requestToUse: string,
+  selectedDesignSystem?: DesignSystemSelection | null
 ): Promise<string> {
-  const prompt = buildScreenPrompt(screen, referenceHtml, requestToUse);
+  const prompt = buildScreenPrompt(screen, referenceHtml, requestToUse, selectedDesignSystem);
   const taggedLLM = createScreenLLM(screen.id);
 
   try {
@@ -624,7 +775,7 @@ async function generateScreenHtmlWithTag(
 
 // Node 4: Parallel Designer - generates ALL remaining screens in parallel with streaming support
 async function parallelDesignerNode(state: typeof AgentState.State) {
-  const { plannedScreens, referenceHtml, userRequest, enrichedRequest, generatedScreens } = state;
+  const { plannedScreens, referenceHtml, userRequest, enrichedRequest, generatedScreens, selectedDesignSystem } = state;
   const requestToUse = enrichedRequest || userRequest;
   
   const remainingScreens = plannedScreens.slice(1).filter(screen => 
@@ -646,7 +797,7 @@ async function parallelDesignerNode(state: typeof AgentState.State) {
   const results = await Promise.all(
     remainingScreens.map(async (screen) => {
       console.log(`[ParallelDesigner] Generating: ${screen.name} (${screen.id})`);
-      const html = await generateScreenHtmlWithTag(screen, referenceHtml, requestToUse);
+      const html = await generateScreenHtmlWithTag(screen, referenceHtml, requestToUse, selectedDesignSystem);
       console.log(`[ParallelDesigner] Completed: ${screen.name} (${screen.id})`);
       return {
         id: screen.id,
@@ -666,16 +817,46 @@ async function parallelDesignerNode(state: typeof AgentState.State) {
 
 // --- Conditional Edge Functions ---
 
-function afterClarifier(state: typeof AgentState.State): "architect" | "__end__" {
-  const { clarificationComplete, planFeedback } = state;
+function afterClarifier(state: typeof AgentState.State): "design_system" | "__end__" {
+  const { clarificationComplete, planFeedback, designApproved } = state;
   
+  // Skip to design_system if plan feedback or design approved (they'll skip through)
+  if (planFeedback && planFeedback.trim().length > 0) {
+    return "design_system";
+  }
+  
+  if (designApproved) {
+    return "design_system";
+  }
+  
+  if (clarificationComplete) {
+    return "design_system";
+  }
+  return "__end__";
+}
+
+function afterDesignSystem(state: typeof AgentState.State): "architect" | "__end__" {
+  const { designSystemComplete, designSystemOptions, planFeedback, designApproved } = state;
+  
+  // If plan feedback or design approved, skip to architect
   if (planFeedback && planFeedback.trim().length > 0) {
     return "architect";
   }
   
-  if (clarificationComplete) {
+  if (designApproved) {
     return "architect";
   }
+  
+  // If design system options are generated but not yet selected, stop and wait for user
+  if (designSystemOptions && !designSystemComplete) {
+    return "__end__";
+  }
+  
+  // If complete (user selected or skipped), continue to architect
+  if (designSystemComplete) {
+    return "architect";
+  }
+  
   return "__end__";
 }
 
@@ -701,12 +882,14 @@ function afterSaveScreen(state: typeof AgentState.State): "parallel_designer" | 
 
 const workflow = new StateGraph(AgentState)
   .addNode("clarifier", clarifierNode)
+  .addNode("design_system", designSystemNode)
   .addNode("architect", architectNode)
   .addNode("designer", designerNode)
   .addNode("save_screen", saveScreenNode)
   .addNode("parallel_designer", parallelDesignerNode)
   .addEdge(START, "clarifier")
   .addConditionalEdges("clarifier", afterClarifier)
+  .addConditionalEdges("design_system", afterDesignSystem)
   .addConditionalEdges("architect", afterArchitect)
   .addEdge("designer", "save_screen")
   .addConditionalEdges("save_screen", afterSaveScreen);

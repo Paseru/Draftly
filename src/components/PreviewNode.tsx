@@ -1,6 +1,6 @@
 import { memo, useRef, useEffect } from 'react';
 import { Handle, Position } from '@xyflow/react';
-import { Maximize2, Code, Edit3 } from 'lucide-react';
+import { Maximize2, Code } from 'lucide-react';
 
 interface PreviewNodeProps {
   id: string;
@@ -175,14 +175,8 @@ const PreviewNode = ({ id, data }: PreviewNodeProps) => {
           </>
         )}
 
-        {/* Hover Highlight Overlay & Edit Button */}
+        {/* Hover Highlight Overlay */}
         <div className="absolute inset-0 rounded-lg ring-2 ring-blue-500/0 group-hover:ring-blue-500/50 transition-all duration-300 pointer-events-none z-10" />
-        <div className="absolute bottom-8 left-1/2 -translate-x-1/2 translate-y-4 opacity-0 group-hover:translate-y-0 group-hover:opacity-100 transition-all duration-300 z-20 pointer-events-none">
-          <div className="flex items-center justify-center gap-2 px-6 py-3 bg-gradient-to-r from-blue-600 to-blue-500 rounded-full shadow-lg shadow-blue-600/40 text-white backdrop-blur-sm transform hover:scale-105 transition-transform duration-200">
-            <Edit3 size={18} strokeWidth={2.5} />
-            <span className="font-medium text-sm">Edit</span>
-          </div>
-        </div>
       </div>
     );
   }
@@ -301,14 +295,8 @@ const PreviewNode = ({ id, data }: PreviewNodeProps) => {
             </div>
           )}
 
-          {/* Mobile Hover Overlay & Edit Button */}
+          {/* Mobile Hover Overlay */}
           <div className="absolute inset-0 rounded-[46px] pointer-events-none z-40 opacity-0 group-hover:opacity-100 transition-opacity duration-300 bg-blue-500/5 mix-blend-overlay" />
-          <div className="absolute bottom-12 left-1/2 -translate-x-1/2 translate-y-4 opacity-0 group-hover:translate-y-0 group-hover:opacity-100 transition-all duration-300 z-50 pointer-events-none">
-            <div className="flex items-center justify-center gap-2 px-6 py-3 bg-gradient-to-r from-blue-600 to-blue-500 rounded-full shadow-lg shadow-blue-600/40 text-white backdrop-blur-sm transform hover:scale-105 transition-transform duration-200">
-              <Edit3 size={18} strokeWidth={2.5} />
-              <span className="font-medium text-sm">Edit</span>
-            </div>
-          </div>
         </div>
 
         {/* Invisible Handles for mobile to allow edges to render */}

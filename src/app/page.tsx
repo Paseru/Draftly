@@ -1023,30 +1023,30 @@ export default function Home() {
             className="absolute inset-0 flex items-center justify-center p-4 z-20 bg-[#1e1e1e]"
           >
              <div className="max-w-4xl w-full flex flex-col items-center space-y-12">
-                <div className="text-center space-y-6">
+                 <div className="text-center space-y-4">
                    <motion.div 
                      initial={{ scale: 0.9, opacity: 0, filter: 'blur(10px)' }}
                      animate={{ scale: 1, opacity: 1, filter: 'blur(0px)' }}
                      transition={{ delay: 0.1, duration: 0.8 }}
-                     className="w-20 h-20 bg-zinc-900/50 rounded-2xl flex items-center justify-center mx-auto mb-8 border border-zinc-800"
+                     className="w-12 h-12 bg-blue-500/10 rounded-xl flex items-center justify-center mx-auto mb-4 ring-1 ring-blue-500/20"
                    >
-                      <Terminal size={40} className="text-zinc-100" />
+                      <AiPaintbrush size={24} className="text-blue-500" />
                    </motion.div>
                    <motion.h1 
                      initial={{ y: 10, opacity: 0, filter: 'blur(10px)' }}
                      animate={{ y: 0, opacity: 1, filter: 'blur(0px)' }}
                      transition={{ delay: 0.2, duration: 0.8 }}
-                     className="text-5xl md:text-6xl font-bold text-white tracking-tight"
+                     className="text-2xl font-bold text-zinc-100 tracking-tight"
                    >
-                     SYSTEM_INIT
+                     Draftly
                    </motion.h1>
                    <motion.p 
                      initial={{ y: 10, opacity: 0, filter: 'blur(10px)' }}
                      animate={{ y: 0, opacity: 1, filter: 'blur(0px)' }}
                      transition={{ delay: 0.3, duration: 0.8 }}
-                     className="text-xl text-zinc-500 max-w-lg mx-auto"
+                     className="text-sm text-zinc-400 max-w-sm mx-auto"
                    >
-                     Initialize generation sequence. Describe target application parameters.
+                     Describe your app to generate screens.
                    </motion.p>
                 </div>
 
@@ -1054,38 +1054,34 @@ export default function Home() {
                   initial={{ y: 20, opacity: 0, filter: 'blur(10px)' }}
                   animate={{ y: 0, opacity: 1, filter: 'blur(0px)' }}
                   transition={{ delay: 0.4, duration: 0.8 }}
-                  className="w-full max-w-2xl relative"
+                  className="w-full max-w-xl relative"
                 >
                   <form onSubmit={sendMessage}>
-                    <div className="relative group">
-                      <div className="absolute -inset-1 bg-gradient-to-r from-blue-600 to-cyan-600 rounded-lg blur opacity-20 group-hover:opacity-40 transition duration-1000 group-hover:duration-200"></div>
-                      <div className="relative">
-                        <span className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500 font-bold">{'>'}</span>
-                        <input
-                          type="text"
-                          value={input}
-                          onChange={(e) => setInput(e.target.value)}
-                          placeholder="Describe your app..."
-                          className="w-full bg-[#0a0a0a] border border-[#333] text-lg text-white rounded-lg py-6 pl-10 pr-14 focus:outline-none focus:border-zinc-500 focus:ring-0 transition-all placeholder:text-zinc-700 shadow-2xl font-mono"
-                          autoFocus
-                        />
-                        {isLoading || !input.trim() ? (
-                          <button 
-                            type="button"
-                            className="absolute right-4 top-1/2 -translate-y-1/2 p-2 text-zinc-700 cursor-not-allowed"
-                            disabled
-                          >
-                            <Send size={20} />
-                          </button>
-                        ) : (
-                          <button 
-                            type="submit"
-                            className="absolute right-4 top-1/2 -translate-y-1/2 p-2 text-white hover:text-blue-400 transition-colors cursor-pointer"
-                          >
-                            <Send size={20} />
-                          </button>
-                        )}
-                      </div>
+                    <div className="relative">
+                      <input
+                        type="text"
+                        value={input}
+                        onChange={(e) => setInput(e.target.value)}
+                        placeholder="e.g. A CRM dashboard..."
+                        className="w-full bg-[#252526] border border-[#3e3e42] text-sm text-zinc-200 rounded-lg px-4 py-3 focus:outline-none focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/20 transition-all placeholder:text-zinc-500"
+                        autoFocus
+                      />
+                      {isLoading || !input.trim() ? (
+                        <button 
+                          type="button"
+                          className="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 text-zinc-600 cursor-not-allowed"
+                          disabled
+                        >
+                          <Send size={16} />
+                        </button>
+                      ) : (
+                        <button 
+                          type="submit"
+                          className="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 text-zinc-400 hover:text-blue-400 transition-colors cursor-pointer"
+                        >
+                          <Send size={16} />
+                        </button>
+                      )}
                     </div>
                   </form>
                 </motion.div>
@@ -1094,7 +1090,7 @@ export default function Home() {
                    initial={{ opacity: 0, y: 20 }}
                    animate={{ opacity: 1, y: 0 }}
                    transition={{ delay: 0.6, duration: 0.8 }}
-                   className="w-full max-w-5xl grid grid-cols-1 md:grid-cols-3 gap-4 pt-4"
+                   className="w-full max-w-xl grid grid-cols-1 md:grid-cols-3 gap-3"
                 >
                    {SUGGESTIONS.map((s, i) => (
                      <motion.button
@@ -1103,27 +1099,16 @@ export default function Home() {
                        animate={{ opacity: 1, y: 0 }}
                        transition={{ delay: 0.7 + (i * 0.05), duration: 0.5 }}
                        onClick={() => setInput(s.prompt)}
-                       className="group relative p-5 bg-[#0a0a0a] border border-[#333] hover:border-zinc-500 rounded-xl text-left transition-all hover:bg-[#111] cursor-pointer overflow-hidden"
+                       className="group p-3 bg-[#252526] border border-[#3e3e42] hover:border-zinc-500 rounded-lg text-left transition-all cursor-pointer"
                      >
-                        <div className="absolute top-0 right-0 p-2 opacity-0 group-hover:opacity-100 transition-opacity text-zinc-600">
-                           <ChevronRight size={16} />
-                        </div>
-                        <h3 className="font-bold text-zinc-300 mb-2 group-hover:text-white transition-colors">{s.title}</h3>
-                        <p className="text-xs text-zinc-600 leading-relaxed group-hover:text-zinc-500 transition-colors line-clamp-2">
+                        <h3 className="font-medium text-xs text-zinc-200 mb-1">{s.title}</h3>
+                        <p className="text-[10px] text-zinc-500 leading-relaxed line-clamp-2 group-hover:text-zinc-400 transition-colors">
                           {s.prompt}
                         </p>
                      </motion.button>
                    ))}
                 </motion.div>
 
-                <motion.div 
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  transition={{ delay: 0.8, duration: 1 }}
-                  className="absolute bottom-8 text-[10px] text-zinc-700 uppercase tracking-widest"
-                >
-                   v3.0.0 • SYSTEM_READY
-                </motion.div>
              </div>
           </motion.div>
         )}

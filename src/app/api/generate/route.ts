@@ -1,4 +1,4 @@
-import { appGeneratorGraph, ConversationTurn, ScreenFlow } from '@/ai/graph';
+import { appGeneratorGraph, ConversationTurn, ScreenFlow, DesignSystemOptions, DesignSystemSelection } from '@/ai/graph';
 import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
 
 export const runtime = 'nodejs';
@@ -14,7 +14,10 @@ interface RequestBody {
   planFeedback?: string;
   generatedScreens?: Array<{ id: string; name: string; html: string }>;
   mode?: 'generate' | 'chat';
-  contextScreen?: { id: string; name: string; html: string };
+  // Design System
+  designSystemOptions?: DesignSystemOptions | null;
+  selectedDesignSystem?: DesignSystemSelection | null;
+  designSystemComplete?: boolean;
 }
 
 function sendSSE(controller: ReadableStreamDefaultController, event: string, data: unknown) {
@@ -34,7 +37,9 @@ export async function POST(request: Request) {
     planFeedback = '',
     generatedScreens = [],
     mode = 'generate',
-    contextScreen
+    designSystemOptions = null,
+    selectedDesignSystem = null,
+    designSystemComplete = false,
   } = body;
 
   if (mode === 'chat') {
@@ -61,17 +66,6 @@ ${contextScreens}
 
 Current Flows:
 ${contextFlows}`;
-
-           if (contextScreen) {
-               chatPrompt += `\n\nCONTEXT SCREEN (User is referring to this screen):
-Name: ${contextScreen.name}
-ID: ${contextScreen.id}
-Current HTML:
-\`\`\`html
-${contextScreen.html.substring(0, 20000)}... (truncated)
-\`\`\`
-If the user asks for code changes, provide the specific code snippet or guidance.`;
-           }
 
            chatPrompt += `\n\nUser Question: "${prompt}"`;
 
@@ -114,10 +108,11 @@ If the user asks for code changes, provide the specific code snippet or guidance
           currentScreenIndex: 0,
           referenceHtml: generatedScreens.length > 0 ? generatedScreens[0].html : '',
           currentScreenHtml: '',
-          generatedScreens: contextScreen 
-             ? generatedScreens.filter(s => s.id !== contextScreen.id) 
-             : generatedScreens,
-          contextScreen,
+          generatedScreens,
+          // Design System
+          designSystemOptions,
+          selectedDesignSystem,
+          designSystemComplete,
         };
 
         let lastNode = '';
@@ -220,8 +215,8 @@ If the user asks for code changes, provide the specific code snippet or guidance
                   });
                 }
               }
-              // Stream thinking for clarifier and architect nodes
-              else if ((currentNodeForThinking === 'clarifier' || currentNodeForThinking === 'architect') && !thinkingEnded) {
+              // Stream thinking for clarifier, design_system, and architect nodes
+              else if ((currentNodeForThinking === 'clarifier' || currentNodeForThinking === 'design_system' || currentNodeForThinking === 'architect') && !thinkingEnded) {
                 thinkingBuffer += chunk.content;
                 
                 // Check if we're entering <thinking>
@@ -263,7 +258,7 @@ If the user asks for code changes, provide the specific code snippet or guidance
           if (event.event === 'on_chain_start' && event.name) {
             const nodeName = event.name;
             console.log('[SSE] on_chain_start:', nodeName);
-            if (['clarifier', 'architect', 'designer', 'save_screen', 'parallel_designer'].includes(nodeName)) {
+            if (['clarifier', 'design_system', 'architect', 'designer', 'save_screen', 'parallel_designer'].includes(nodeName)) {
               currentNodeForThinking = nodeName;
               // Reset thinking state for new node
               thinkingBuffer = '';
@@ -341,6 +336,20 @@ If the user asks for code changes, provide the specific code snippet or guidance
                 sendSSE(controller, 'clarification_question', state.currentQuestion);
               } else if (state.clarificationComplete) {
                 sendSSE(controller, 'step', { name: 'clarifying', status: 'completed' });
+              }
+            }
+
+            // Design System node
+            if (nodeName === 'design_system') {
+              lastNode = 'design_system';
+              
+              // If options were generated, send them to the client
+              if (state.designSystemOptions && !state.designSystemComplete) {
+                sendSSE(controller, 'step', { name: 'design_system', status: 'waiting' });
+                sendSSE(controller, 'design_system_options', state.designSystemOptions);
+              } else if (state.designSystemComplete) {
+                sendSSE(controller, 'step', { name: 'design_system', status: 'completed' });
+                // Start planning step
                 if (!planningStepSent) {
                   const isReplanning = planFeedback && planFeedback.trim().length > 0;
                   sendSSE(controller, 'step', { 
