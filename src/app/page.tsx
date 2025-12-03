@@ -26,6 +26,7 @@ import ClarificationQuestions, { ClarificationQuestion, ClarificationAnswer } fr
 import PlanReview from '@/components/PlanReview';
 import DesignSystemSelector, { DesignSystemOptions, DesignSystemSelection } from '@/components/DesignSystemSelector';
 import ReactMarkdown from 'react-markdown';
+import HelpBubble from '@/components/HelpBubble';
 
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
@@ -1339,6 +1340,8 @@ export default function Home() {
                   <Smartphone size={20} />
                 </button>
               </div>
+
+              <HelpBubble />
 
               {/* Export Menu (Removed) */}
 
