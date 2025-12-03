@@ -31,19 +31,19 @@ export function computeFlowLayout(
   config: LayoutConfig
 ): NodePosition[] {
   if (screens.length === 0) return [];
-  
+
   const { nodeWidth, nodeHeight, horizontalGap, verticalGap } = config;
-  
+
   // Build adjacency lists from flows ONLY (ignore screen array order)
   const outgoing: Map<string, string[]> = new Map();
   const incoming: Map<string, number> = new Map();
   const screenIds = new Set(screens.map(s => s.id));
-  
+
   screens.forEach((s) => {
     outgoing.set(s.id, []);
     incoming.set(s.id, 0);
   });
-  
+
   // Build graph from flows
   flows.forEach((flow) => {
     // Only process flows where both screens exist
@@ -52,95 +52,115 @@ export function computeFlowLayout(
       incoming.set(flow.to, (incoming.get(flow.to) || 0) + 1);
     }
   });
-  
-  // Find entry points = screens with NO incoming edges
+
+  // BFS to assign levels - handle disconnected components
+  const levels: Map<string, number> = new Map();
+  const visited = new Set<string>();
+
+  // Helper to run BFS from a set of start nodes
+  const runBFS = (starts: string[]) => {
+    const queue: { id: string; level: number }[] = starts.map((id) => ({ id, level: 0 }));
+
+    while (queue.length > 0) {
+      const { id, level } = queue.shift()!;
+
+      if (visited.has(id)) continue;
+      visited.add(id);
+
+      // If we found a path to this node that is longer (deeper), update it?
+      // For simple tree/DAG layout, usually we want the *longest* path to push it right,
+      // or shortest path to keep it left. Let's stick to "first discovery" (shortest path) for now to keep it simple,
+      // but we might need to revisit if we want "longest path layering".
+      if (!levels.has(id)) {
+        levels.set(id, level);
+      }
+
+      const neighbors = outgoing.get(id) || [];
+      neighbors.forEach((neighborId) => {
+        if (!visited.has(neighborId)) {
+          queue.push({ id: neighborId, level: level + 1 });
+        }
+      });
+    }
+  };
+
+  // 1. Find natural entry points (in-degree 0)
   const entryPoints: string[] = [];
   screens.forEach((s) => {
     if ((incoming.get(s.id) || 0) === 0) {
       entryPoints.push(s.id);
     }
   });
-  
-  // If no entry points found (all have incoming = cycle), use first screen
-  if (entryPoints.length === 0 && screens.length > 0) {
-    entryPoints.push(screens[0].id);
+
+  // Run BFS from natural entry points
+  if (entryPoints.length > 0) {
+    runBFS(entryPoints);
   }
-  
-  // BFS to assign levels - each node gets the level of its first discovery
-  const levels: Map<string, number> = new Map();
-  const queue: { id: string; level: number }[] = entryPoints.map((id) => ({ id, level: 0 }));
-  
-  while (queue.length > 0) {
-    const { id, level } = queue.shift()!;
-    
-    // Skip if already visited
-    if (levels.has(id)) continue;
-    
-    levels.set(id, level);
-    
-    // Add all outgoing neighbors at level + 1
-    const neighbors = outgoing.get(id) || [];
-    neighbors.forEach((neighborId) => {
-      if (!levels.has(neighborId)) {
-        queue.push({ id: neighborId, level: level + 1 });
-      }
-    });
+
+  // 2. Handle disconnected components / cycles
+  // If there are nodes not visited yet, pick one arbitrarily and run BFS
+  // This handles "A <-> B" isolated cycles where neither has in-degree 0
+  let unvisited = screens.filter(s => !visited.has(s.id));
+  while (unvisited.length > 0) {
+    // Pick the first one as a pseudo-root
+    const root = unvisited[0];
+    runBFS([root.id]);
+    unvisited = screens.filter(s => !visited.has(s.id));
   }
-  
-  // Handle disconnected nodes (no flows) - place at level 0
-  screens.forEach((s) => {
-    if (!levels.has(s.id)) {
-      levels.set(s.id, 0);
-    }
-  });
-  
+
   // Calculate Y positions using a recursive tree layout
-  // This ensures parents are centered relative to their children
   const yPositions: Map<string, number> = new Map();
   const visitedForY = new Set<string>();
+  const recursionStack = new Set<string>(); // To detect cycles during recursion
   let nextAvailableY = 0;
 
   function calculateY(nodeId: string): number {
-    // If already calculated (shared child in DAG), return existing Y
+    // If already calculated, return existing Y
     if (visitedForY.has(nodeId)) {
       return yPositions.get(nodeId) || 0;
     }
-    visitedForY.add(nodeId);
+
+    // Cycle detection: if we are currently visiting this node in the recursion stack,
+    // treat it as a leaf for this path to break the cycle.
+    if (recursionStack.has(nodeId)) {
+      // Return a temporary Y (e.g., next available) or just 0?
+      // If we return 0, it might overlap. Let's just return nextAvailableY to be safe,
+      // but NOT mark it as visited globally so it can be properly placed later if reached from a valid path?
+      // Actually, if it's a back-edge, we just want to ignore this child for the parent's centering logic.
+      return nextAvailableY;
+    }
+
+    recursionStack.add(nodeId);
 
     const children = outgoing.get(nodeId) || [];
-    
-    // Filter children that are effectively "next level" or valid to drive layout
-    // (In a DAG, we might want to prioritize main tree branches, but simple traversal works)
-    
-    if (children.length === 0) {
-      // Leaf node: assign next available vertical slot
+
+    // Filter out children that are back-edges (already in recursion stack)
+    // to prevent infinite loops and bad centering
+    const validChildren = children.filter(childId => !recursionStack.has(childId));
+
+    if (validChildren.length === 0) {
+      // Leaf node (or all children are back-edges): assign next available vertical slot
+      visitedForY.add(nodeId);
+      recursionStack.delete(nodeId);
+
       const y = nextAvailableY;
       nextAvailableY += nodeHeight + verticalGap;
       yPositions.set(nodeId, y);
       return y;
     }
 
-    // Non-leaf: Recursively calculate children's positions first (Post-Order)
+    // Non-leaf: Recursively calculate children's positions first
     let minChildY = Infinity;
     let maxChildY = -Infinity;
-    let hasProcessedChildren = false;
 
-    children.forEach((childId) => {
-      // Only consider children that haven't been fixed by another parent yet?
-      // Actually, in a tree, we process them. In a DAG, if already processed, use their value.
+    validChildren.forEach((childId) => {
       const childY = calculateY(childId);
       minChildY = Math.min(minChildY, childY);
       maxChildY = Math.max(maxChildY, childY);
-      hasProcessedChildren = true;
     });
 
-    if (!hasProcessedChildren) {
-        // Should not happen given children.length > 0 check, but for safety
-        const y = nextAvailableY;
-        nextAvailableY += nodeHeight + verticalGap;
-        yPositions.set(nodeId, y);
-        return y;
-    }
+    visitedForY.add(nodeId);
+    recursionStack.delete(nodeId);
 
     // Place parent in the vertical center of its children
     const y = (minChildY + maxChildY) / 2;
@@ -148,28 +168,35 @@ export function computeFlowLayout(
     return y;
   }
 
-  // Calculate Y for all entry points (roots)
-  entryPoints.forEach((rootId) => {
-    calculateY(rootId);
-    // Add spacing between separate trees if necessary
-    // nextAvailableY += nodeHeight + verticalGap; // Optional: separate trees visibly
+  // Calculate Y for all nodes, starting from those with lowest level (left-most)
+  // Sorting by level helps process parents before children in a general sense,
+  // though calculateY is recursive/DFS.
+  // We prioritize our identified entry points, then any unvisited.
+
+  // Re-use our entry points logic, but now we might have more "roots" from the disconnected phase
+  // Let's just iterate all screens. If not visited, calculate.
+  // We prefer starting from level 0 nodes.
+  const sortedScreens = [...screens].sort((a, b) => {
+    const levA = levels.get(a.id) || 0;
+    const levB = levels.get(b.id) || 0;
+    return levA - levB;
   });
 
-  // Handle any disconnected components not reached from entry points
-  screens.forEach((s) => {
+  sortedScreens.forEach((s) => {
     if (!visitedForY.has(s.id)) {
       calculateY(s.id);
+      // Add spacing between separate trees
+      nextAvailableY += nodeHeight + verticalGap;
     }
   });
-  
+
   // Normalize Y positions to start at 0
-  // (Optional, but good for centering the whole graph in the view)
   const allYs = Array.from(yPositions.values());
   const minY = Math.min(...allYs);
   if (minY > 0) {
     screens.forEach(s => {
-        const current = yPositions.get(s.id) || 0;
-        yPositions.set(s.id, current - minY);
+      const current = yPositions.get(s.id) || 0;
+      yPositions.set(s.id, current - minY);
     });
   }
 
@@ -180,7 +207,7 @@ export function computeFlowLayout(
     y: yPositions.get(s.id) || 0,
     level: levels.get(s.id) || 0,
   }));
-  
+
   return positions;
 }
 
@@ -196,7 +223,7 @@ export function getLayoutConfig(viewMode: 'desktop' | 'mobile'): LayoutConfig {
       verticalGap: 140,   // Increased by 40% (was 100)
     };
   }
-  
+
   return {
     nodeWidth: 1920,
     nodeHeight: 1080,

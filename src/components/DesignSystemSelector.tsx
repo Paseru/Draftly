@@ -51,7 +51,7 @@ export default function DesignSystemSelector({ options, onSubmit, submittedSelec
     if (!options.fonts.length) return;
 
     const fontsToLoad = options.fonts.map(f => f.googleFontName.replace(/ /g, '+'));
-    
+
     if (fontsToLoad.length === 0) return;
 
     // Check if link already exists to avoid duplicates
@@ -67,6 +67,12 @@ export default function DesignSystemSelector({ options, onSubmit, submittedSelec
     // No cleanup - keep fonts loaded
   }, [options.fonts]);
 
+  useEffect(() => {
+    if (submittedSelection) {
+      setIsExpanded(false);
+    }
+  }, [submittedSelection]);
+
 
 
   const handleSubmit = () => {
@@ -78,8 +84,8 @@ export default function DesignSystemSelector({ options, onSubmit, submittedSelec
 
   return (
     <div className="w-full max-w-xl bg-[#1e1e1e] border border-[#27272a] rounded-xl overflow-hidden transition-all duration-200">
-      <div 
-        onClick={() => setIsExpanded(!isExpanded)} 
+      <div
+        onClick={() => setIsExpanded(!isExpanded)}
         className="flex items-center justify-between px-4 py-3 transition-colors cursor-pointer hover:bg-white/5"
       >
         <div className="flex items-center gap-2">
@@ -97,7 +103,7 @@ export default function DesignSystemSelector({ options, onSubmit, submittedSelec
         </div>
       </div>
 
-      <div 
+      <div
         className={cn(
           "transition-[max-height,opacity] duration-300 ease-in-out overflow-y-auto custom-scrollbar",
           isExpanded ? "max-h-[400px] opacity-100" : "max-h-0 opacity-0"
@@ -110,7 +116,7 @@ export default function DesignSystemSelector({ options, onSubmit, submittedSelec
               <Type size={12} />
               <span className="text-[10px] font-medium uppercase tracking-wider">Typography</span>
             </div>
-            
+
             <div className="grid grid-cols-1 gap-1.5">
               {options.fonts.map((font) => {
                 const isSelected = selectedFont?.id === font.id;
@@ -121,8 +127,8 @@ export default function DesignSystemSelector({ options, onSubmit, submittedSelec
                     disabled={isSubmitted}
                     className={cn(
                       "w-full px-3 py-2 rounded-lg text-left transition-all duration-200 border group",
-                      isSelected 
-                        ? "bg-blue-500/10 border-blue-500/30" 
+                      isSelected
+                        ? "bg-blue-500/10 border-blue-500/30"
                         : "bg-[#202023] border-[#27272a]",
                       !isSubmitted && !isSelected && "hover:bg-[#27272a] hover:border-zinc-600",
                       isSubmitted ? "cursor-default" : "cursor-pointer"
@@ -130,7 +136,7 @@ export default function DesignSystemSelector({ options, onSubmit, submittedSelec
                   >
                     <div className="flex items-center justify-between">
                       <div className="space-y-0.5">
-                        <div 
+                        <div
                           className={cn(
                             "text-[13px] font-medium transition-colors",
                             isSelected ? "text-blue-300" : "text-zinc-200 group-hover:text-white"
@@ -139,7 +145,7 @@ export default function DesignSystemSelector({ options, onSubmit, submittedSelec
                         >
                           {font.name}
                         </div>
-                        <div 
+                        <div
                           className="text-[10px] text-zinc-500"
                           style={{ fontFamily: `'${font.googleFontName}', sans-serif` }}
                         >
@@ -162,7 +168,7 @@ export default function DesignSystemSelector({ options, onSubmit, submittedSelec
               <Palette size={12} />
               <span className="text-[10px] font-medium uppercase tracking-wider">Color Palette</span>
             </div>
-            
+
             <div className="grid grid-cols-1 gap-1.5">
               {options.palettes.map((palette) => {
                 const isSelected = selectedPalette?.id === palette.id;
@@ -173,8 +179,8 @@ export default function DesignSystemSelector({ options, onSubmit, submittedSelec
                     disabled={isSubmitted}
                     className={cn(
                       "w-full px-3 py-2 rounded-lg text-left transition-all duration-200 border group",
-                      isSelected 
-                        ? "bg-blue-500/10 border-blue-500/30" 
+                      isSelected
+                        ? "bg-blue-500/10 border-blue-500/30"
                         : "bg-[#202023] border-[#27272a]",
                       !isSubmitted && !isSelected && "hover:bg-[#27272a] hover:border-zinc-600",
                       isSubmitted ? "cursor-default" : "cursor-pointer"
@@ -188,37 +194,37 @@ export default function DesignSystemSelector({ options, onSubmit, submittedSelec
                         )}>
                           {palette.name}
                         </div>
-                        
+
                         {/* Color swatches */}
                         <div className="flex items-center gap-1">
-                          <div 
+                          <div
                             className="w-7 h-7 rounded-md ring-1 ring-white/10 shadow-inner"
                             style={{ backgroundColor: palette.colors.primary }}
                             title="Primary"
                           />
-                          <div 
+                          <div
                             className="w-7 h-7 rounded-md ring-1 ring-white/10 shadow-inner"
                             style={{ backgroundColor: palette.colors.secondary }}
                             title="Secondary"
                           />
-                          <div 
+                          <div
                             className="w-7 h-7 rounded-md ring-1 ring-white/10 shadow-inner"
                             style={{ backgroundColor: palette.colors.accent }}
                             title="Accent"
                           />
-                          <div 
+                          <div
                             className="w-7 h-7 rounded-md ring-1 ring-white/10 shadow-inner"
                             style={{ backgroundColor: palette.colors.background }}
                             title="Background"
                           />
-                          <div 
+                          <div
                             className="w-7 h-7 rounded-md ring-1 ring-white/10 shadow-inner"
                             style={{ backgroundColor: palette.colors.text }}
                             title="Text"
                           />
                         </div>
                       </div>
-                      
+
                       {isSelected && (
                         <CheckCircle2 size={14} className="text-blue-400" />
                       )}
@@ -239,7 +245,7 @@ export default function DesignSystemSelector({ options, onSubmit, submittedSelec
                 className={cn(
                   "w-full px-3 py-2 rounded-lg text-left transition-all duration-200 border group",
                   selectedPalette?.id === 'auto'
-                    ? "bg-blue-500/10 border-blue-500/30" 
+                    ? "bg-blue-500/10 border-blue-500/30"
                     : "bg-[#202023] border-[#27272a]",
                   !isSubmitted && selectedPalette?.id !== 'auto' && "hover:bg-[#27272a] hover:border-zinc-600",
                   isSubmitted ? "cursor-default" : "cursor-pointer"
@@ -273,8 +279,8 @@ export default function DesignSystemSelector({ options, onSubmit, submittedSelec
             disabled={!canSubmit}
             className={cn(
               "px-4 py-1.5 rounded text-[11px] font-medium transition-all flex items-center gap-1.5",
-              canSubmit 
-                ? "bg-zinc-100 hover:bg-white text-zinc-900 shadow-lg shadow-white/5 transform hover:-translate-y-0.5 cursor-pointer" 
+              canSubmit
+                ? "bg-zinc-100 hover:bg-white text-zinc-900 shadow-lg shadow-white/5 transform hover:-translate-y-0.5 cursor-pointer"
                 : "bg-[#27272a] text-zinc-500 cursor-not-allowed border border-transparent"
             )}
           >
