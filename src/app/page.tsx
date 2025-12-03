@@ -1320,7 +1320,7 @@ export default function Home() {
                 proOptions={{ hideAttribution: true }}
                 defaultEdgeOptions={{ type: 'animatedEdge' }}
               >
-                <Background color="#222" gap={40} variant={BackgroundVariant.Lines} size={1} />
+                <Background color="#555" gap={20} variant={BackgroundVariant.Dots} size={1} />
                 <Controls className="bg-[#252526] border-[#3e3e42] text-[#d4d4d4] fill-[#d4d4d4] rounded-md overflow-hidden shadow-xl" />
               </ReactFlow>
 
