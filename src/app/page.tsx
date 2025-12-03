@@ -27,6 +27,7 @@ import PlanReview from '@/components/PlanReview';
 import DesignSystemSelector, { DesignSystemOptions, DesignSystemSelection } from '@/components/DesignSystemSelector';
 import ReactMarkdown from 'react-markdown';
 import HelpBubble from '@/components/HelpBubble';
+import OverloadModal from '@/components/OverloadModal';
 
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
@@ -89,6 +90,7 @@ export default function Home() {
   const [viewMode, setViewMode] = useState<'desktop' | 'mobile'>('desktop');
   const [isExportOpen, setIsExportOpen] = useState(false);
   const [isResetModalOpen, setIsResetModalOpen] = useState(false);
+  const [isOverloadModalOpen, setIsOverloadModalOpen] = useState(false);
 
   // Persistence states for the flow
   const currentPromptRef = useRef<string>('');
@@ -270,7 +272,17 @@ export default function Home() {
       let buffer = '';
 
       while (true) {
-        const { done, value } = await reader.read();
+        // Create a promise that rejects after 60 seconds
+        const timeoutPromise = new Promise<never>((_, reject) => {
+          setTimeout(() => reject(new Error('TIMEOUT')), 60000);
+        });
+
+        // Race between the reader and the timeout
+        const { done, value } = await Promise.race([
+          reader.read(),
+          timeoutPromise.then(() => ({ done: false, value: undefined })) as Promise<{ done: boolean, value: Uint8Array | undefined }>
+        ]);
+
         if (done) break;
 
         buffer += decoder.decode(value, { stream: true });
@@ -630,6 +642,15 @@ export default function Home() {
     } catch (error: unknown) {
       if (error instanceof Error && error.name === 'AbortError') {
         console.log('Generation aborted');
+      } else if (error instanceof Error && error.message === 'TIMEOUT') {
+        console.log('Generation timed out');
+        setIsOverloadModalOpen(true);
+        // Clean up the last message to remove the "Thinking..." state if needed
+        updateLastMessage(msg => ({
+          ...msg,
+          isThinkingPaused: true,
+          content: msg.content || "Generation timed out due to high traffic."
+        }));
       } else {
         console.error(error);
         setMessages(prev => [...prev, { role: 'assistant', content: "Une erreur est survenue lors de la génération." }]);
@@ -1114,12 +1135,16 @@ export default function Home() {
             className="min-w-0 border-r border-[#3e3e42] flex flex-col bg-[#252526] z-10 shadow-xl overflow-hidden"
           >
             <div className="h-14 border-b border-[#3e3e42] flex items-center px-4 justify-between bg-[#1e1e1e] shrink-0">
-              <div className="flex items-center gap-2">
+              <button
+                onClick={() => setIsResetModalOpen(true)}
+                className="flex items-center gap-2 cursor-pointer hover:opacity-80 transition-opacity"
+                title="Retour à l'accueil"
+              >
                 <div className="w-6 h-6 bg-blue-500/20 rounded-md flex items-center justify-center text-blue-400">
                   <AiPaintbrush size={14} />
                 </div>
                 <span className="font-semibold text-sm">Draftly</span>
-              </div>
+              </button>
               <button
                 onClick={() => setIsSidebarOpen(false)}
                 className="text-zinc-500 hover:text-white cursor-pointer p-1 rounded-md hover:bg-white/5 transition-colors"
@@ -1559,6 +1584,10 @@ export default function Home() {
         </div>
       )}
 
+      <OverloadModal
+        isOpen={isOverloadModalOpen}
+        onClose={() => setIsOverloadModalOpen(false)}
+      />
     </div>
   );
 }
