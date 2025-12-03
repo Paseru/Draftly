@@ -1007,7 +1007,7 @@ export default function Home() {
 
   const SUGGESTIONS = [
     { title: "SaaS Dashboard", prompt: "A modern analytics dashboard for a SaaS platform with dark mode, charts, and user management." },
-    { title: "Social Mobile App", prompt: "A social networking mobile app focused on sharing travel itineraries and photos with friends." },
+    { title: "Social Web App", prompt: "A social networking app focused on sharing travel itineraries and photos with friends." },
     { title: "Portfolio Website", prompt: "A minimalist portfolio website for a digital artist with gallery grid and contact form." },
     { title: "E-commerce Store", prompt: "A clean, modern e-commerce store for high-end furniture with product filtering and cart." },
   ];

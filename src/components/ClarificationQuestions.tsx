@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ChevronRight, ChevronDown, Edit3, CheckCircle2 } from 'lucide-react';
+import { ChevronRight, ChevronDown, Edit3, HelpCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 export interface ClarificationQuestion {
@@ -97,7 +97,7 @@ export default function ClarificationQuestions({ questions, onSubmit, onAutoGene
       >
          <div className="flex items-center gap-2">
            {isAnswered ? (
-             <CheckCircle2 size={14} className="text-blue-500" />
+             <HelpCircle size={14} className="text-blue-500" />
            ) : (
              <div className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse" />
            )}
@@ -116,7 +116,7 @@ export default function ClarificationQuestions({ questions, onSubmit, onAutoGene
            isExpanded ? "max-h-[500px] opacity-100" : "max-h-0 opacity-0"
         )}
       >
-        <div className="px-4 py-4 pt-6 space-y-6">
+        <div className="px-4 py-4 pt-6 space-y-6 border-t border-[#27272a] bg-[#181818]">
           {questions.map((q) => (
              <div key={q.id} className="space-y-3">
                 <p className="text-[13px] text-zinc-200 font-medium leading-relaxed">

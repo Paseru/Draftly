@@ -84,9 +84,9 @@ export default function DesignSystemSelector({ options, onSubmit, submittedSelec
       >
         <div className="flex items-center gap-2">
           {isSubmitted ? (
-            <CheckCircle2 size={14} className="text-emerald-500" />
+            <Palette size={14} className="text-orange-500" />
           ) : (
-            <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+            <div className="w-1.5 h-1.5 rounded-full bg-orange-500 animate-pulse" />
           )}
           <span className={`text-xs font-medium tracking-wide ${isSubmitted ? 'text-zinc-500' : 'text-white'}`}>
             Design System
@@ -103,7 +103,7 @@ export default function DesignSystemSelector({ options, onSubmit, submittedSelec
           isExpanded ? "max-h-[400px] opacity-100" : "max-h-0 opacity-0"
         )}
       >
-        <div className="px-4 py-3 pt-4 space-y-4">
+        <div className="px-4 py-3 pt-4 space-y-4 border-t border-[#27272a] bg-[#181818]">
           {/* Font Selection */}
           <div className="space-y-2">
             <div className="flex items-center gap-2 text-zinc-400">

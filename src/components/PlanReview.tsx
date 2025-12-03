@@ -34,7 +34,7 @@ export default function PlanReview({ screens, onApprove, onRequestRefine, isAppr
       >
         <div className="flex items-center gap-2">
           {isApproved ? (
-            <CheckCircle2 size={14} className="text-purple-500" />
+            <Layers size={14} className="text-purple-500" />
           ) : (
             <div className="w-1.5 h-1.5 rounded-full bg-purple-500" />
           )}
@@ -60,7 +60,7 @@ export default function PlanReview({ screens, onApprove, onRequestRefine, isAppr
           isExpanded ? 'max-h-[600px] opacity-100 border-t border-[#27272a]' : 'max-h-0 opacity-0'
         }`}
       >
-        <div className="p-0 max-h-[400px] overflow-y-auto custom-scrollbar">
+        <div className="p-0 max-h-[400px] overflow-y-auto custom-scrollbar bg-[#181818]">
           {screens.map((screen, idx) => (
             <div 
               key={screen.id} 

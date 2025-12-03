@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { ChevronDown, ChevronRight, CheckCircle2, Loader2, PauseCircle } from 'lucide-react';
+import { ChevronDown, ChevronRight, Lightbulb, Loader2, PauseCircle } from 'lucide-react';
 import { TextShimmer } from '@/components/ui/TextShimmer';
 import ReactMarkdown from 'react-markdown';
 
@@ -57,7 +57,7 @@ export default function ThinkingBlock({ content, isComplete = false, isPaused = 
         <div className="flex items-center gap-2">
           {isComplete ? (
             <>
-              <CheckCircle2 size={14} className="text-green-500" />
+              <Lightbulb size={14} className="text-green-500" />
               <span className="text-xs font-medium text-zinc-500">
                 Thought for {durationSeconds || 0}s
               </span>
@@ -90,7 +90,7 @@ export default function ThinkingBlock({ content, isComplete = false, isPaused = 
         >
           <div 
             ref={contentRef}
-            className="px-4 pb-4 overflow-y-auto border-t border-[#27272a]"
+            className="px-4 pb-4 overflow-y-auto border-t border-[#27272a] bg-[#181818]"
             style={{ maxHeight: isOpen ? '300px' : '0' }}
           >
             <div className="text-[11px] text-zinc-400 leading-relaxed pt-3 thinking-content">
