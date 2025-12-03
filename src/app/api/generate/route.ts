@@ -419,6 +419,28 @@ ${contextFlows}`;
                 }))
               });
               
+              // Generate AI completion message
+              const allScreens = state.plannedScreens as Array<{ id: string; name: string; description: string }> || [];
+              const screenNames = allScreens.map(s => s.name).join(', ');
+              
+              try {
+                const completionLLM = new ChatGoogleGenerativeAI({
+                  model: "gemini-2.0-flash",
+                  temperature: 0.7,
+                  maxOutputTokens: 256,
+                });
+                
+                const completionPrompt = `You just finished designing a web application with these screens: ${screenNames}.
+
+Write a SHORT, friendly completion message to let the user know their app is ready. Be enthusiastic but concise. Mention they can preview, view code, or export.`;
+                
+                const completionResponse = await completionLLM.invoke(completionPrompt);
+                sendSSE(controller, 'completion_message', completionResponse.content);
+              } catch (e) {
+                console.error('[Completion] Error generating message:', e);
+                sendSSE(controller, 'completion_message', `Your application with ${allScreens.length} screens is ready! You can now preview each screen, view the code, or export them.`);
+              }
+              
               lastNode = 'parallel_designer';
             }
           }

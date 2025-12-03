@@ -24,7 +24,3 @@ body {
   color: var(--foreground);
   font-family: var(--font-geist-mono), monospace;
 }
-
-* {
-  font-family: var(--font-geist-mono), monospace !important;
-}

@@ -603,15 +603,18 @@ export default function Home() {
                 });
               }
 
-              // Done
-              if (event.type === 'done') {
-                const screens = plannedScreensRef.current;
-                const screenList = screens.map(s => `- **${s.name}**`).join('\n');
-                const completionMsg = `I've successfully designed your application with ${screens.length} screens:\n\n${screenList}\n\nYou can now preview each screen, view the code, or export them.`;
-                
+              // AI Completion Message
+              if (event.type === 'completion_message') {
                 updateLastMessage(msg => ({
                   ...msg,
-                  completionMessage: completionMsg,
+                  completionMessage: String(event.data),
+                }));
+              }
+
+              // Done
+              if (event.type === 'done') {
+                updateLastMessage(msg => ({
+                  ...msg,
                   designSteps: msg.designSteps?.map(s => ({ ...s, status: 'completed' as const }))
                 }));
               }
@@ -1184,13 +1187,13 @@ export default function Home() {
 
                        {/* Completion Message */}
                        {msg.completionMessage && (
-                         <div className="text-[11px] text-zinc-400 leading-relaxed mt-2">
+                         <div className="text-[12px] text-white leading-relaxed mt-2 px-3 pt-[5px]">
                            <ReactMarkdown
                              components={{
                                p: ({children}) => <p className="mb-2">{children}</p>,
-                               strong: ({children}) => <span className="text-zinc-300 font-medium">{children}</span>,
+                               strong: ({children}) => <span className="text-white font-medium">{children}</span>,
                                ul: ({children}) => <ul className="list-disc list-inside mb-2">{children}</ul>,
-                               li: ({children}) => <li className="text-zinc-400">{children}</li>,
+                               li: ({children}) => <li className="text-white">{children}</li>,
                              }}
                            >
                              {msg.completionMessage}
@@ -1201,7 +1204,7 @@ export default function Home() {
                        {/* Welcome message */}
                        {msg.content === 'Hey ! How can i help you design your app today ?' && (
                          <div className="px-3 py-2.5 bg-[#1e1e1e] rounded-lg border border-[#3e3e42]">
-                           <p className="text-xs text-zinc-300">How can I help you design your app?</p>
+                           <p className="text-sm font-medium text-zinc-300">👋 How can I help you design your app?</p>
                          </div>
                        )}
                     </div>
@@ -1254,7 +1257,7 @@ export default function Home() {
                     className="flex-1 h-9 bg-[#252526] hover:bg-[#3e3e42] border border-[#3e3e42] text-[11px] text-zinc-300 rounded-lg flex items-center justify-center gap-2 transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
                   >
                     <Palette size={14} />
-                    <span>Export Design System</span>
+                    <span>Export Design</span>
                   </button>
                   <button 
                     onClick={handleExportZip}
@@ -1529,8 +1532,8 @@ export default function Home() {
                 <RotateCcw size={24} />
               </div>
               <div className="text-center space-y-2">
-                <h3 className="text-lg font-semibold text-white">Reset Project?</h3>
-                <p className="text-sm text-zinc-400">
+                <h3 className="text-sm font-semibold text-white">Reset Project?</h3>
+                <p className="text-[11px] text-zinc-400">
                   This will permanently delete all generated screens, chat history, and current progress. You will be returned to the start screen.
                 </p>
               </div>
@@ -1538,13 +1541,13 @@ export default function Home() {
             <div className="p-4 bg-[#252526] border-t border-[#3e3e42] flex items-center gap-3">
               <button 
                 onClick={() => setIsResetModalOpen(false)}
-                className="flex-1 px-4 py-2.5 text-sm font-medium text-zinc-300 hover:text-white bg-transparent hover:bg-[#3e3e42] rounded-lg transition-colors"
+                className="flex-1 px-4 py-2.5 text-[11px] font-medium text-zinc-300 hover:text-white bg-transparent hover:bg-[#3e3e42] rounded-lg transition-colors cursor-pointer"
               >
                 Cancel
               </button>
               <button 
                 onClick={handleReset}
-                className="flex-1 px-4 py-2.5 text-sm font-medium text-white bg-red-600 hover:bg-red-500 rounded-lg transition-colors shadow-lg shadow-red-900/20"
+                className="flex-1 px-4 py-2.5 text-[11px] font-medium text-white bg-red-600 hover:bg-red-500 rounded-lg transition-colors shadow-lg shadow-red-900/20 cursor-pointer"
               >
                 Reset Everything
               </button>

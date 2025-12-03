@@ -161,7 +161,16 @@ async function invokeLLM(prompt: string): Promise<string> {
 
 // Node 0: Clarifier (Conversational - one question at a time)
 async function clarifierNode(state: typeof AgentState.State) {
-  const { userRequest, conversationHistory, skipToPlanning, planFeedback, enrichedRequest, designApproved } = state;
+  const { userRequest, conversationHistory, skipToPlanning, planFeedback, enrichedRequest, designApproved, designSystemComplete } = state;
+  
+  // Skip clarification if design system is already complete (user selected font/colors)
+  if (designSystemComplete) {
+    return {
+      clarificationComplete: true,
+      currentQuestion: null,
+      enrichedRequest: enrichedRequest || userRequest,
+    };
+  }
   
   if (designApproved) {
     return {
@@ -326,12 +335,12 @@ YOUR TASK: Generate design system options tailored to this specific project.
 
 Based on the project's nature, target audience, and industry, suggest:
 
-1. **FONTS**: 4 Google Fonts that would work perfectly for this type of application
+1. **FONTS**: 5 Google Fonts that would work perfectly for this type of application
    - Consider readability, personality, and professionalism
    - Mix of heading and body fonts where appropriate
    - Must be real Google Fonts names (exactly as they appear on fonts.google.com)
 
-2. **COLOR PALETTES**: 4 distinct color schemes that match the project's vibe
+2. **COLOR PALETTES**: 5 distinct color schemes that match the project's vibe
    - Each palette should have a unique personality/mood
    - Colors must be in HEX format
    - Consider accessibility and contrast ratios
@@ -442,7 +451,7 @@ You must UPDATE the plan based on this feedback. Add, remove, or modify screens 
 
 User Request: "${requestToUse}"
 ${feedbackSection}
-YOUR GOAL: Design a COMPLETE, PRODUCTION-READY WEB APPLICATION flow with navigation transitions.
+YOUR GOAL: Design a COMPLETE, PRODUCTION-READY WEB APPLICATION NOT MOBILE flow with navigation transitions.
 
 Requirements:
 1. **Focus on Core Screens** All the screens necessary for the app to be functional.
@@ -536,17 +545,23 @@ async function designerNode(state: typeof AgentState.State) {
   let designSystemInstructions = '';
   if (selectedDesignSystem) {
     const { font, palette } = selectedDesignSystem;
-    designSystemInstructions = `
-MANDATORY DESIGN SYSTEM (User Selected):
-- **Font**: Use "${font.googleFontName}" from Google Fonts as the primary font family
-- **Color Palette** "${palette.name}":
+    
+    // Check if user chose "auto" for colors
+    const colorInstructions = palette.id === 'auto'
+      ? `- **Color Palette**: You have creative freedom to choose the best colors that fit the project's mood and purpose. Pick a cohesive, professional color scheme.`
+      : `- **Color Palette** "${palette.name}":
   - Primary: ${palette.colors.primary}
   - Secondary: ${palette.colors.secondary}
   - Accent: ${palette.colors.accent}
   - Background: ${palette.colors.background}
-  - Text: ${palette.colors.text}
+  - Text: ${palette.colors.text}`;
+    
+    designSystemInstructions = `
+MANDATORY DESIGN SYSTEM (User Selected):
+- **Font**: Use "${font.googleFontName}" from Google Fonts as the primary font family
+${colorInstructions}
 
-You MUST apply this exact font and color scheme throughout the design. Import the font from Google Fonts in the <head>.
+You MUST apply this exact font throughout the design. Import the font from Google Fonts in the <head>.
 `;
   }
   
@@ -667,17 +682,23 @@ function buildScreenPrompt(
   let designSystemInstructions = '';
   if (selectedDesignSystem) {
     const { font, palette } = selectedDesignSystem;
-    designSystemInstructions = `
-MANDATORY DESIGN SYSTEM (User Selected):
-- **Font**: Use "${font.googleFontName}" from Google Fonts as the primary font family
-- **Color Palette** "${palette.name}":
+    
+    // Check if user chose "auto" for colors
+    const colorInstructions = palette.id === 'auto'
+      ? `- **Color Palette**: You have creative freedom to choose the best colors that fit the project's mood and purpose. Pick a cohesive, professional color scheme.`
+      : `- **Color Palette** "${palette.name}":
   - Primary: ${palette.colors.primary}
   - Secondary: ${palette.colors.secondary}
   - Accent: ${palette.colors.accent}
   - Background: ${palette.colors.background}
-  - Text: ${palette.colors.text}
+  - Text: ${palette.colors.text}`;
+    
+    designSystemInstructions = `
+MANDATORY DESIGN SYSTEM (User Selected):
+- **Font**: Use "${font.googleFontName}" from Google Fonts as the primary font family
+${colorInstructions}
 
-You MUST apply this exact font and color scheme throughout the design.
+You MUST apply this exact font throughout the design.
 `;
   }
 
@@ -818,7 +839,12 @@ async function parallelDesignerNode(state: typeof AgentState.State) {
 // --- Conditional Edge Functions ---
 
 function afterClarifier(state: typeof AgentState.State): "design_system" | "__end__" {
-  const { clarificationComplete, planFeedback, designApproved } = state;
+  const { clarificationComplete, planFeedback, designApproved, designSystemComplete } = state;
+  
+  // Skip to design_system if design system already complete (user selected font/colors)
+  if (designSystemComplete) {
+    return "design_system";
+  }
   
   // Skip to design_system if plan feedback or design approved (they'll skip through)
   if (planFeedback && planFeedback.trim().length > 0) {

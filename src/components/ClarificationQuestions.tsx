@@ -196,7 +196,7 @@ export default function ClarificationQuestions({ questions, onSubmit, onAutoGene
                             : "text-zinc-500 bg-[#27272a] border-transparent cursor-not-allowed"
                         )}
                       >
-                        Submit & Generate Plan
+                        Submit & Skip to Design
                       </button>
                     )}
                     

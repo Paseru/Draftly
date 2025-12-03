@@ -43,7 +43,6 @@ export default function DesignSystemSelector({ options, onSubmit, submittedSelec
   const [selectedFont, setSelectedFont] = useState<FontOption | null>(submittedSelection?.font || null);
   const [selectedPalette, setSelectedPalette] = useState<ColorPalette | null>(submittedSelection?.palette || null);
   const [isExpanded, setIsExpanded] = useState(!submittedSelection);
-  const [fontsLoaded, setFontsLoaded] = useState<Set<string>>(new Set());
 
   const isSubmitted = !!submittedSelection;
 
@@ -51,29 +50,22 @@ export default function DesignSystemSelector({ options, onSubmit, submittedSelec
   useEffect(() => {
     if (!options.fonts.length) return;
 
-    const fontsToLoad = options.fonts
-      .filter(f => !fontsLoaded.has(f.googleFontName))
-      .map(f => f.googleFontName.replace(/ /g, '+'));
-
+    const fontsToLoad = options.fonts.map(f => f.googleFontName.replace(/ /g, '+'));
+    
     if (fontsToLoad.length === 0) return;
+
+    // Check if link already exists to avoid duplicates
+    const existingLink = document.querySelector(`link[data-fonts="${fontsToLoad.join(',')}"]`);
+    if (existingLink) return;
 
     const link = document.createElement('link');
     link.href = `https://fonts.googleapis.com/css2?${fontsToLoad.map(f => `family=${f}:wght@400;500;600;700`).join('&')}&display=swap`;
     link.rel = 'stylesheet';
+    link.setAttribute('data-fonts', fontsToLoad.join(','));
     document.head.appendChild(link);
 
-    link.onload = () => {
-      setFontsLoaded(prev => {
-        const newSet = new Set(prev);
-        options.fonts.forEach(f => newSet.add(f.googleFontName));
-        return newSet;
-      });
-    };
-
-    return () => {
-      document.head.removeChild(link);
-    };
-  }, [options.fonts, fontsLoaded]);
+    // No cleanup - keep fonts loaded
+  }, [options.fonts]);
 
 
 
@@ -107,19 +99,19 @@ export default function DesignSystemSelector({ options, onSubmit, submittedSelec
 
       <div 
         className={cn(
-          "transition-[max-height,opacity] duration-300 ease-in-out overflow-hidden",
-          isExpanded ? "max-h-[800px] opacity-100" : "max-h-0 opacity-0"
+          "transition-[max-height,opacity] duration-300 ease-in-out overflow-y-auto custom-scrollbar",
+          isExpanded ? "max-h-[400px] opacity-100" : "max-h-0 opacity-0"
         )}
       >
-        <div className="px-4 py-4 pt-2 space-y-6">
+        <div className="px-4 py-3 pt-4 space-y-4">
           {/* Font Selection */}
-          <div className="space-y-3">
+          <div className="space-y-2">
             <div className="flex items-center gap-2 text-zinc-400">
-              <Type size={14} />
-              <span className="text-[11px] font-medium uppercase tracking-wider">Typography</span>
+              <Type size={12} />
+              <span className="text-[10px] font-medium uppercase tracking-wider">Typography</span>
             </div>
             
-            <div className="grid grid-cols-1 gap-2">
+            <div className="grid grid-cols-1 gap-1.5">
               {options.fonts.map((font) => {
                 const isSelected = selectedFont?.id === font.id;
                 return (
@@ -128,112 +120,34 @@ export default function DesignSystemSelector({ options, onSubmit, submittedSelec
                     onClick={() => !isSubmitted && setSelectedFont(font)}
                     disabled={isSubmitted}
                     className={cn(
-                      "w-full px-4 py-3 rounded-lg text-left transition-all duration-200 border group",
+                      "w-full px-3 py-2 rounded-lg text-left transition-all duration-200 border group",
                       isSelected 
-                        ? "bg-emerald-500/10 border-emerald-500/40" 
+                        ? "bg-blue-500/10 border-blue-500/30" 
                         : "bg-[#202023] border-[#27272a]",
                       !isSubmitted && !isSelected && "hover:bg-[#27272a] hover:border-zinc-600",
-                      isSubmitted && "cursor-default"
+                      isSubmitted ? "cursor-default" : "cursor-pointer"
                     )}
                   >
                     <div className="flex items-center justify-between">
-                      <div className="space-y-1.5">
+                      <div className="space-y-0.5">
                         <div 
                           className={cn(
-                            "text-lg font-semibold transition-colors",
-                            isSelected ? "text-emerald-300" : "text-zinc-200 group-hover:text-white"
+                            "text-[13px] font-medium transition-colors",
+                            isSelected ? "text-blue-300" : "text-zinc-200 group-hover:text-white"
                           )}
                           style={{ fontFamily: `'${font.googleFontName}', sans-serif` }}
                         >
                           {font.name}
                         </div>
                         <div 
-                          className="text-[11px] text-zinc-500"
+                          className="text-[10px] text-zinc-500"
                           style={{ fontFamily: `'${font.googleFontName}', sans-serif` }}
                         >
                           The quick brown fox jumps over the lazy dog
                         </div>
                       </div>
-                      <div className={cn(
-                        "text-[10px] px-2 py-0.5 rounded-full border",
-                        isSelected 
-                          ? "text-emerald-400 border-emerald-500/30 bg-emerald-500/10"
-                          : "text-zinc-600 border-zinc-700"
-                      )}>
-                        {font.category}
-                      </div>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Color Palette Selection */}
-          <div className="space-y-3">
-            <div className="flex items-center gap-2 text-zinc-400">
-              <Palette size={14} />
-              <span className="text-[11px] font-medium uppercase tracking-wider">Color Palette</span>
-            </div>
-            
-            <div className="grid grid-cols-1 gap-2">
-              {options.palettes.map((palette) => {
-                const isSelected = selectedPalette?.id === palette.id;
-                return (
-                  <button
-                    key={palette.id}
-                    onClick={() => !isSubmitted && setSelectedPalette(palette)}
-                    disabled={isSubmitted}
-                    className={cn(
-                      "w-full px-4 py-3 rounded-lg text-left transition-all duration-200 border group",
-                      isSelected 
-                        ? "bg-emerald-500/10 border-emerald-500/40" 
-                        : "bg-[#202023] border-[#27272a]",
-                      !isSubmitted && !isSelected && "hover:bg-[#27272a] hover:border-zinc-600",
-                      isSubmitted && "cursor-default"
-                    )}
-                  >
-                    <div className="flex items-center justify-between">
-                      <div className="space-y-2">
-                        <div className={cn(
-                          "text-[13px] font-medium transition-colors",
-                          isSelected ? "text-emerald-300" : "text-zinc-200 group-hover:text-white"
-                        )}>
-                          {palette.name}
-                        </div>
-                        
-                        {/* Color swatches */}
-                        <div className="flex items-center gap-1">
-                          <div 
-                            className="w-8 h-8 rounded-md ring-1 ring-white/10 shadow-inner"
-                            style={{ backgroundColor: palette.colors.primary }}
-                            title="Primary"
-                          />
-                          <div 
-                            className="w-8 h-8 rounded-md ring-1 ring-white/10 shadow-inner"
-                            style={{ backgroundColor: palette.colors.secondary }}
-                            title="Secondary"
-                          />
-                          <div 
-                            className="w-8 h-8 rounded-md ring-1 ring-white/10 shadow-inner"
-                            style={{ backgroundColor: palette.colors.accent }}
-                            title="Accent"
-                          />
-                          <div 
-                            className="w-6 h-6 rounded ring-1 ring-white/10 shadow-inner"
-                            style={{ backgroundColor: palette.colors.background }}
-                            title="Background"
-                          />
-                          <div 
-                            className="w-6 h-6 rounded ring-1 ring-white/10 shadow-inner"
-                            style={{ backgroundColor: palette.colors.text }}
-                            title="Text"
-                          />
-                        </div>
-                      </div>
-                      
                       {isSelected && (
-                        <CheckCircle2 size={16} className="text-emerald-400" />
+                        <CheckCircle2 size={14} className="text-blue-400" />
                       )}
                     </div>
                   </button>
@@ -242,26 +156,133 @@ export default function DesignSystemSelector({ options, onSubmit, submittedSelec
             </div>
           </div>
 
-          {/* Submit Button */}
-          {!isSubmitted && (
-            <div className="flex justify-end pt-2 border-t border-[#27272a]">
+          {/* Color Palette Selection */}
+          <div className="space-y-2">
+            <div className="flex items-center gap-2 text-zinc-400">
+              <Palette size={12} />
+              <span className="text-[10px] font-medium uppercase tracking-wider">Color Palette</span>
+            </div>
+            
+            <div className="grid grid-cols-1 gap-1.5">
+              {options.palettes.map((palette) => {
+                const isSelected = selectedPalette?.id === palette.id;
+                return (
+                  <button
+                    key={palette.id}
+                    onClick={() => !isSubmitted && setSelectedPalette(palette)}
+                    disabled={isSubmitted}
+                    className={cn(
+                      "w-full px-3 py-2 rounded-lg text-left transition-all duration-200 border group",
+                      isSelected 
+                        ? "bg-blue-500/10 border-blue-500/30" 
+                        : "bg-[#202023] border-[#27272a]",
+                      !isSubmitted && !isSelected && "hover:bg-[#27272a] hover:border-zinc-600",
+                      isSubmitted ? "cursor-default" : "cursor-pointer"
+                    )}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="space-y-1.5 pb-0.5">
+                        <div className={cn(
+                          "text-[12px] font-medium transition-colors",
+                          isSelected ? "text-blue-300" : "text-zinc-200 group-hover:text-white"
+                        )}>
+                          {palette.name}
+                        </div>
+                        
+                        {/* Color swatches */}
+                        <div className="flex items-center gap-1">
+                          <div 
+                            className="w-7 h-7 rounded-md ring-1 ring-white/10 shadow-inner"
+                            style={{ backgroundColor: palette.colors.primary }}
+                            title="Primary"
+                          />
+                          <div 
+                            className="w-7 h-7 rounded-md ring-1 ring-white/10 shadow-inner"
+                            style={{ backgroundColor: palette.colors.secondary }}
+                            title="Secondary"
+                          />
+                          <div 
+                            className="w-7 h-7 rounded-md ring-1 ring-white/10 shadow-inner"
+                            style={{ backgroundColor: palette.colors.accent }}
+                            title="Accent"
+                          />
+                          <div 
+                            className="w-7 h-7 rounded-md ring-1 ring-white/10 shadow-inner"
+                            style={{ backgroundColor: palette.colors.background }}
+                            title="Background"
+                          />
+                          <div 
+                            className="w-7 h-7 rounded-md ring-1 ring-white/10 shadow-inner"
+                            style={{ backgroundColor: palette.colors.text }}
+                            title="Text"
+                          />
+                        </div>
+                      </div>
+                      
+                      {isSelected && (
+                        <CheckCircle2 size={14} className="text-blue-400" />
+                      )}
+                    </div>
+                  </button>
+                );
+              })}
+
+              {/* Auto option - Let Draftly choose (last) */}
               <button
-                onClick={handleSubmit}
-                disabled={!canSubmit}
+                onClick={() => !isSubmitted && setSelectedPalette({
+                  id: 'auto',
+                  name: 'Auto',
+                  colors: { primary: '', secondary: '', accent: '', background: '', text: '' },
+                  reason: 'Let AI choose the best colors'
+                })}
+                disabled={isSubmitted}
                 className={cn(
-                  "px-4 py-1.5 rounded text-[11px] font-medium transition-all flex items-center gap-1.5",
-                  canSubmit 
-                    ? "bg-emerald-500 hover:bg-emerald-400 text-white shadow-lg shadow-emerald-500/20 transform hover:-translate-y-0.5 cursor-pointer" 
-                    : "bg-[#27272a] text-zinc-500 cursor-not-allowed border border-transparent"
+                  "w-full px-3 py-2 rounded-lg text-left transition-all duration-200 border group",
+                  selectedPalette?.id === 'auto'
+                    ? "bg-blue-500/10 border-blue-500/30" 
+                    : "bg-[#202023] border-[#27272a]",
+                  !isSubmitted && selectedPalette?.id !== 'auto' && "hover:bg-[#27272a] hover:border-zinc-600",
+                  isSubmitted ? "cursor-default" : "cursor-pointer"
                 )}
               >
-                Continue with Design
-                <ChevronRight size={12} />
+                <div className="flex items-center justify-between">
+                  <div className="space-y-1.5 pb-0.5">
+                    <div className={cn(
+                      "text-[12px] font-medium transition-colors",
+                      selectedPalette?.id === 'auto' ? "text-blue-300" : "text-zinc-200 group-hover:text-white"
+                    )}>
+                      Let Draftly choose
+                    </div>
+                    <div className="text-[10px] text-zinc-500">Recommended for best results</div>
+                  </div>
+                  {selectedPalette?.id === 'auto' && (
+                    <CheckCircle2 size={14} className="text-blue-400" />
+                  )}
+                </div>
               </button>
             </div>
-          )}
+          </div>
         </div>
       </div>
+
+      {/* Submit Button - Outside scrollable area */}
+      {!isSubmitted && isExpanded && (
+        <div className="flex justify-end px-4 py-3 border-t border-[#27272a] bg-[#1e1e1e]">
+          <button
+            onClick={handleSubmit}
+            disabled={!canSubmit}
+            className={cn(
+              "px-4 py-1.5 rounded text-[11px] font-medium transition-all flex items-center gap-1.5",
+              canSubmit 
+                ? "bg-zinc-100 hover:bg-white text-zinc-900 shadow-lg shadow-white/5 transform hover:-translate-y-0.5 cursor-pointer" 
+                : "bg-[#27272a] text-zinc-500 cursor-not-allowed border border-transparent"
+            )}
+          >
+            Generate Plan
+            <ChevronRight size={12} />
+          </button>
+        </div>
+      )}
     </div>
   );
 }
