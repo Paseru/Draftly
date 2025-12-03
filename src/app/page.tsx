@@ -272,17 +272,7 @@ export default function Home() {
       let buffer = '';
 
       while (true) {
-        // Create a promise that rejects after 60 seconds
-        const timeoutPromise = new Promise<never>((_, reject) => {
-          setTimeout(() => reject(new Error('TIMEOUT')), 60000);
-        });
-
-        // Race between the reader and the timeout
-        const { done, value } = await Promise.race([
-          reader.read(),
-          timeoutPromise.then(() => ({ done: false, value: undefined })) as Promise<{ done: boolean, value: Uint8Array | undefined }>
-        ]);
-
+        const { done, value } = await reader.read();
         if (done) break;
 
         buffer += decoder.decode(value, { stream: true });
@@ -624,6 +614,17 @@ export default function Home() {
                 }));
               }
 
+              // Rate Limit Error
+              if (event.type === 'rate_limit_error') {
+                console.log('Rate limit error detected');
+                setIsOverloadModalOpen(true);
+                updateLastMessage(msg => ({
+                  ...msg,
+                  isThinkingPaused: true,
+                  content: msg.content || "Our systems are currently overloaded. Please try again later."
+                }));
+              }
+
               // Done
               if (event.type === 'done') {
                 updateLastMessage(msg => ({
@@ -642,15 +643,6 @@ export default function Home() {
     } catch (error: unknown) {
       if (error instanceof Error && error.name === 'AbortError') {
         console.log('Generation aborted');
-      } else if (error instanceof Error && error.message === 'TIMEOUT') {
-        console.log('Generation timed out');
-        setIsOverloadModalOpen(true);
-        // Clean up the last message to remove the "Thinking..." state if needed
-        updateLastMessage(msg => ({
-          ...msg,
-          isThinkingPaused: true,
-          content: msg.content || "Generation timed out due to high traffic."
-        }));
       } else {
         console.error(error);
         setMessages(prev => [...prev, { role: 'assistant', content: "Une erreur est survenue lors de la génération." }]);
@@ -667,6 +659,11 @@ export default function Home() {
 
     const userPrompt = input;
     setInput('');
+
+    // Show overload modal immediately
+    setMessages(prev => [...prev, { role: 'user', content: userPrompt }]);
+    setIsOverloadModalOpen(true);
+    return;
 
     if (isRefiningPlan) {
       setIsRefiningPlan(false);

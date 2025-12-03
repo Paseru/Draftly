@@ -27,9 +27,9 @@ function sendSSE(controller: ReadableStreamDefaultController, event: string, dat
 
 export async function POST(request: Request) {
   const body: RequestBody = await request.json();
-  const { 
-    prompt, 
-    conversationHistory = [], 
+  const {
+    prompt,
+    conversationHistory = [],
     plannedScreens = [],
     plannedFlows = [],
     skipToPlanning = false,
@@ -51,13 +51,13 @@ export async function POST(request: Request) {
     const stream = new ReadableStream({
       async start(controller) {
         try {
-           // Send a thought event to show activity
-           sendSSE(controller, 'thought', "Analyzing your question...");
+          // Send a thought event to show activity
+          sendSSE(controller, 'thought', "Analyzing your question...");
 
-           const contextScreens = plannedScreens.map(s => `${s.name}: ${s.description}`).join('\n');
-           const contextFlows = plannedFlows.map(f => `${f.from} -> ${f.to} (${f.label})`).join('\n');
-           
-           let chatPrompt = `You are a helpful AI assistant aiding a user in designing an app.
+          const contextScreens = plannedScreens.map(s => `${s.name}: ${s.description}`).join('\n');
+          const contextFlows = plannedFlows.map(f => `${f.from} -> ${f.to} (${f.label})`).join('\n');
+
+          let chatPrompt = `You are a helpful AI assistant aiding a user in designing an app.
 The user has paused the generation process to ask a question or asked for clarification.
 Answer concisely and helpfully.
 
@@ -67,21 +67,34 @@ ${contextScreens}
 Current Flows:
 ${contextFlows}`;
 
-           chatPrompt += `\n\nUser Question: "${prompt}"`;
+          chatPrompt += `\n\nUser Question: "${prompt}"`;
 
-           const response = await llm.invoke(chatPrompt);
-           
-           sendSSE(controller, 'chat_response', response.content);
-           sendSSE(controller, 'done', {});
-           controller.close();
-        } catch (e) {
-           console.error("Chat mode error:", e);
-           sendSSE(controller, 'error', { message: String(e) });
-           controller.close();
+          const response = await llm.invoke(chatPrompt);
+
+          sendSSE(controller, 'chat_response', response.content);
+          sendSSE(controller, 'done', {});
+          controller.close();
+        } catch (e: unknown) {
+          console.error("Chat mode error:", e);
+
+          // Check if it's a rate limit error
+          const errorMessage = String(e);
+          const isRateLimitError =
+            errorMessage.includes('429') ||
+            errorMessage.includes('Too Many Requests') ||
+            errorMessage.includes('quota') ||
+            errorMessage.includes('rate limit');
+
+          if (isRateLimitError) {
+            sendSSE(controller, 'rate_limit_error', { message: errorMessage });
+          } else {
+            sendSSE(controller, 'error', { message: errorMessage });
+          }
+          controller.close();
         }
       }
     });
-    
+
     return new Response(stream, {
       headers: {
         'Content-Type': 'text/event-stream',
@@ -119,7 +132,7 @@ ${contextFlows}`;
         let screenIndex = 0;
         let planningStepSent = false;
         let currentNodeForThinking = '';
-        
+
         // Thinking stream state
         let thinkingBuffer = '';
         let isInsideThinking = false;
@@ -143,45 +156,45 @@ ${contextFlows}`;
           if (event.event === 'on_chat_model_stream') {
             const chunk = event.data?.chunk;
             if (chunk?.content && typeof chunk.content === 'string') {
-              
+
               // Check if this chunk is from a tagged parallel screen LLM
               const tags = event.tags || [];
               const screenTag = tags.find((t: string) => t.startsWith('screen:'));
-              
+
               if (screenTag && currentNodeForThinking === 'parallel_designer') {
                 // Extract screenId from tag like "screen:screen_123"
                 const screenId = screenTag.replace('screen:', '');
-                
+
                 // Initialize buffer for this screen if not exists
                 if (!parallelHtmlBuffers.has(screenId)) {
                   parallelHtmlBuffers.set(screenId, { buffer: '', isStreaming: false });
                 }
-                
+
                 const screenState = parallelHtmlBuffers.get(screenId)!;
                 screenState.buffer += chunk.content;
-                
+
                 // Look for start of HTML (<!DOCTYPE or <html)
                 if (!screenState.isStreaming) {
                   const doctypeIndex = screenState.buffer.indexOf('<!DOCTYPE');
                   const htmlIndex = screenState.buffer.indexOf('<html');
                   const startIndex = doctypeIndex >= 0 ? doctypeIndex : htmlIndex;
-                  
+
                   if (startIndex >= 0) {
                     screenState.isStreaming = true;
                     const htmlContent = screenState.buffer.slice(startIndex);
                     if (htmlContent) {
-                      sendSSE(controller, 'code_chunk', { 
-                        screenId, 
-                        content: htmlContent 
+                      sendSSE(controller, 'code_chunk', {
+                        screenId,
+                        content: htmlContent
                       });
                     }
                     screenState.buffer = '';
                   }
                 } else {
                   // Already streaming, send chunk directly
-                  sendSSE(controller, 'code_chunk', { 
-                    screenId, 
-                    content: chunk.content 
+                  sendSSE(controller, 'code_chunk', {
+                    screenId,
+                    content: chunk.content
                   });
                   screenState.buffer = '';
                 }
@@ -189,36 +202,36 @@ ${contextFlows}`;
               // Stream HTML for designer node (first screen only)
               else if (currentNodeForThinking === 'designer' && currentDesignerScreenId) {
                 htmlBuffer += chunk.content;
-                
+
                 // Look for start of HTML (<!DOCTYPE or <html)
                 if (!isStreamingHtml) {
                   const doctypeIndex = htmlBuffer.indexOf('<!DOCTYPE');
                   const htmlIndex = htmlBuffer.indexOf('<html');
                   const startIndex = doctypeIndex >= 0 ? doctypeIndex : htmlIndex;
-                  
+
                   if (startIndex >= 0) {
                     isStreamingHtml = true;
                     const htmlContent = htmlBuffer.slice(startIndex);
                     if (htmlContent) {
-                      sendSSE(controller, 'code_chunk', { 
-                        screenId: currentDesignerScreenId, 
-                        content: htmlContent 
+                      sendSSE(controller, 'code_chunk', {
+                        screenId: currentDesignerScreenId,
+                        content: htmlContent
                       });
                     }
                     htmlBuffer = '';
                   }
                 } else {
                   // Already streaming, send chunk directly
-                  sendSSE(controller, 'code_chunk', { 
-                    screenId: currentDesignerScreenId, 
-                    content: chunk.content 
+                  sendSSE(controller, 'code_chunk', {
+                    screenId: currentDesignerScreenId,
+                    content: chunk.content
                   });
                 }
               }
               // Stream thinking for clarifier, design_system, and architect nodes
               else if ((currentNodeForThinking === 'clarifier' || currentNodeForThinking === 'design_system' || currentNodeForThinking === 'architect') && !thinkingEnded) {
                 thinkingBuffer += chunk.content;
-                
+
                 // Check if we're entering <thinking>
                 if (!isInsideThinking && thinkingBuffer.includes('<thinking>')) {
                   isInsideThinking = true;
@@ -264,7 +277,7 @@ ${contextFlows}`;
               thinkingBuffer = '';
               isInsideThinking = false;
               thinkingEnded = false;
-              
+
               // For designer, set up the current screen and reset HTML streaming
               if (nodeName === 'designer') {
                 const screens = plannedScreens.length > 0 ? plannedScreens : [];
@@ -274,11 +287,11 @@ ${contextFlows}`;
                   isStreamingHtml = false;
                   htmlBuffer = '';
                   console.log('[Designer] Starting design for screen:', currentScreen.id, currentScreen.name);
-                  
+
                   // Send screen_start event
                   sendSSE(controller, 'screen_start', { screenId: currentScreen.id });
-                  sendSSE(controller, 'step', { 
-                    name: 'designing_screen', 
+                  sendSSE(controller, 'step', {
+                    name: 'designing_screen',
                     status: 'started',
                     screenName: currentScreen.name,
                     screenIndex,
@@ -286,15 +299,15 @@ ${contextFlows}`;
                   });
                 }
               }
-              
+
               // For parallel_designer, send event to show all remaining screen loaders
               if (nodeName === 'parallel_designer') {
                 const screens = plannedScreens.length > 0 ? plannedScreens : [];
                 const remainingScreens = screens.slice(1);
                 console.log('[ParallelDesigner] Starting parallel generation of', remainingScreens.length, 'screens');
-                
+
                 // Send parallel_screens_start with all remaining screens
-                sendSSE(controller, 'parallel_screens_start', { 
+                sendSSE(controller, 'parallel_screens_start', {
                   screens: remainingScreens.map((s, i) => ({
                     id: s.id,
                     name: s.name,
@@ -304,7 +317,7 @@ ${contextFlows}`;
               }
             }
           }
-          
+
           // Log all chain_end events to debug
           if (event.event === 'on_chain_end') {
             const outputKeys = event.data?.output ? Object.keys(event.data.output) : [];
@@ -342,7 +355,7 @@ ${contextFlows}`;
             // Design System node
             if (nodeName === 'design_system') {
               lastNode = 'design_system';
-              
+
               // If options were generated, send them to the client
               if (state.designSystemOptions && !state.designSystemComplete) {
                 sendSSE(controller, 'step', { name: 'design_system', status: 'waiting' });
@@ -352,9 +365,9 @@ ${contextFlows}`;
                 // Start planning step
                 if (!planningStepSent) {
                   const isReplanning = planFeedback && planFeedback.trim().length > 0;
-                  sendSSE(controller, 'step', { 
-                    name: isReplanning ? 'replanning' : 'planning', 
-                    status: 'started' 
+                  sendSSE(controller, 'step', {
+                    name: isReplanning ? 'replanning' : 'planning',
+                    status: 'started'
                   });
                   planningStepSent = true;
                 }
@@ -374,7 +387,7 @@ ${contextFlows}`;
 
               if (state.plannedScreens && !designApproved) {
                 sendSSE(controller, 'step', { name: 'planning', status: 'completed' });
-                sendSSE(controller, 'plan_ready', { 
+                sendSSE(controller, 'plan_ready', {
                   plannedScreens: state.plannedScreens,
                   plannedFlows: state.plannedFlows || []
                 });
@@ -395,12 +408,12 @@ ${contextFlows}`;
             // Save screen node (first screen only now)
             if (nodeName === 'save_screen') {
               const screens = plannedScreens.length > 0 ? plannedScreens : (state.plannedScreens as Array<{ id: string; name: string; description: string }>) || [];
-              
-              sendSSE(controller, 'screen_complete', { 
+
+              sendSSE(controller, 'screen_complete', {
                 screenId: screens[screenIndex]?.id,
-                screenIndex 
+                screenIndex
               });
-              
+
               screenIndex++;
               lastNode = 'save_screen';
             }
@@ -409,38 +422,38 @@ ${contextFlows}`;
             if (nodeName === 'parallel_designer') {
               const generatedScreens = state.generatedScreens as Array<{ id: string; name: string; html: string }> || [];
               console.log('[ParallelDesigner] Completed, generated', generatedScreens.length, 'screens');
-              
+
               // HTML is already streamed via code_chunk events, just send completion notification
-              sendSSE(controller, 'parallel_screens_complete', { 
+              sendSSE(controller, 'parallel_screens_complete', {
                 screens: generatedScreens.map(s => ({
                   id: s.id,
                   name: s.name
                   // HTML not included - already streamed
                 }))
               });
-              
+
               // Generate AI completion message
               const allScreens = state.plannedScreens as Array<{ id: string; name: string; description: string }> || [];
               const screenNames = allScreens.map(s => s.name).join(', ');
-              
+
               try {
                 const completionLLM = new ChatGoogleGenerativeAI({
                   model: "gemini-2.0-flash",
                   temperature: 0.7,
                   maxOutputTokens: 256,
                 });
-                
+
                 const completionPrompt = `You just finished designing a web application with these screens: ${screenNames}.
 
 Write a SHORT, friendly completion message to let the user know their app is ready. Be enthusiastic but concise. Mention they can preview, view code, or export.`;
-                
+
                 const completionResponse = await completionLLM.invoke(completionPrompt);
                 sendSSE(controller, 'completion_message', completionResponse.content);
               } catch (e) {
                 console.error('[Completion] Error generating message:', e);
                 sendSSE(controller, 'completion_message', `Your application with ${allScreens.length} screens is ready! You can now preview each screen, view the code, or export them.`);
               }
-              
+
               lastNode = 'parallel_designer';
             }
           }
@@ -449,9 +462,22 @@ Write a SHORT, friendly completion message to let the user know their app is rea
         sendSSE(controller, 'done', {});
         controller.close();
 
-      } catch (error) {
+      } catch (error: unknown) {
         console.error('Graph execution error:', error);
-        sendSSE(controller, 'error', { message: String(error) });
+
+        // Check if it's a rate limit error
+        const errorMessage = String(error);
+        const isRateLimitError =
+          errorMessage.includes('429') ||
+          errorMessage.includes('Too Many Requests') ||
+          errorMessage.includes('quota') ||
+          errorMessage.includes('rate limit');
+
+        if (isRateLimitError) {
+          sendSSE(controller, 'rate_limit_error', { message: errorMessage });
+        } else {
+          sendSSE(controller, 'error', { message: errorMessage });
+        }
         controller.close();
       }
     }
