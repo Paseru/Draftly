@@ -19,6 +19,7 @@ import { Send, Terminal, X, Code as CodeIcon, ChevronLeft, ChevronRight, Monitor
 import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
 import AiPaintbrush from '@/components/ui/AiPaintbrush';
+import Link from 'next/link';
 import PreviewNode, { StreamingIframe } from '@/components/PreviewNode';
 import ProcessSteps, { Step } from '@/components/ProcessSteps';
 import ThinkingBlock from '@/components/ThinkingBlock';
@@ -28,6 +29,11 @@ import DesignSystemSelector, { DesignSystemOptions, DesignSystemSelection } from
 import ReactMarkdown from 'react-markdown';
 import HelpBubble from '@/components/HelpBubble';
 import OverloadModal from '@/components/OverloadModal';
+import SubscriptionModal from '@/components/SubscriptionModal';
+import LoginModal from '@/components/LoginModal';
+import { useConvexAuth, useQuery, useMutation } from 'convex/react';
+import { useAuthActions } from '@convex-dev/auth/react';
+import { api } from '../../convex/_generated/api';
 
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
@@ -91,6 +97,28 @@ export default function Home() {
   const [isExportOpen, setIsExportOpen] = useState(false);
   const [isResetModalOpen, setIsResetModalOpen] = useState(false);
   const [isOverloadModalOpen, setIsOverloadModalOpen] = useState(false);
+  const [isSubscriptionModalOpen, setIsSubscriptionModalOpen] = useState(false);
+  const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
+  const [pendingPrompt, setPendingPrompt] = useState<string | null>(null);
+  const completedScreensCountRef = useRef<number>(0);
+  const { isAuthenticated, isLoading: isAuthLoading } = useConvexAuth();
+  const { signOut } = useAuthActions();
+
+  // Check if user has an active subscription
+  const hasActiveSubscription = useQuery(api.stripe.hasActiveSubscription) ?? false;
+
+  // Check if user has already used their free trial (stored in Convex)
+  const hasUsedFreeTrial = useQuery(api.users.hasUsedFreeTrial) ?? false;
+  const currentUser = useQuery(api.users.getCurrentUser);
+  const markFreeTrialUsed = useMutation(api.users.markFreeTrialUsed);
+  const incrementGenerationsUsed = useMutation(api.users.incrementGenerationsUsed);
+  const createProject = useMutation(api.projects.createProject);
+
+  // Get first name from user
+  const firstName = currentUser?.name?.split(' ')[0] || '';
+
+  // Get remaining generations for the user
+  const generationsData = useQuery(api.users.getGenerationsRemaining);
 
   // Persistence states for the flow
   const currentPromptRef = useRef<string>('');
@@ -109,6 +137,85 @@ export default function Home() {
   useEffect(() => {
     viewModeRef.current = viewMode;
   }, [viewMode]);
+
+  // Persist pending prompt to localStorage before OAuth redirect
+  useEffect(() => {
+    if (pendingPrompt) {
+      localStorage.setItem('pendingPrompt', pendingPrompt);
+    }
+  }, [pendingPrompt]);
+
+  // State to trigger generation after Stripe subscription success
+  const [resumeAfterSubscription, setResumeAfterSubscription] = useState<string | null>(null);
+
+  // Handle Stripe checkout success/cancel URL params
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const urlParams = new URLSearchParams(window.location.search);
+      const subscriptionStatus = urlParams.get('subscription');
+
+      if (subscriptionStatus === 'success') {
+        // Remove the URL param without refreshing
+        window.history.replaceState({}, '', window.location.pathname);
+        console.log('[Stripe] Subscription successful!');
+
+        // Check if there's a pending prompt to resume
+        // Don't remove from localStorage yet - we'll do that when we actually start processing
+        // This ensures we don't lose the prompt if hasActiveSubscription takes time to update
+        const savedPrompt = localStorage.getItem('pendingPrompt');
+        console.log('[Stripe] Checking for pending prompt:', savedPrompt);
+        if (savedPrompt) {
+          // Keep in localStorage, just set state to trigger the resume effect
+          setResumeAfterSubscription(savedPrompt);
+        }
+      } else if (subscriptionStatus === 'canceled') {
+        // User canceled checkout - just remove the param
+        window.history.replaceState({}, '', window.location.pathname);
+        console.log('[Stripe] Checkout canceled');
+      }
+    }
+  }, []);
+
+  // State to trigger generation after OAuth redirect
+  const [resumePrompt, setResumePrompt] = useState<string | null>(null);
+
+  // Debug: Log localStorage state on mount
+  useEffect(() => {
+    const savedPrompt = localStorage.getItem('pendingPrompt');
+    console.log('[OAuth Mount] Page loaded. pendingPrompt in localStorage:', savedPrompt);
+  }, []);
+
+  // Resume generation after OAuth login redirect
+  useEffect(() => {
+    console.log('[OAuth Debug] Auth state changed - isAuthenticated:', isAuthenticated, 'isAuthLoading:', isAuthLoading);
+
+    // Don't do anything while auth is loading
+    if (isAuthLoading) {
+      console.log('[OAuth Debug] Auth is still loading, waiting...');
+      return;
+    }
+
+    // Check if user just logged in and has a pending prompt
+    if (isAuthenticated) {
+      const savedPrompt = localStorage.getItem('pendingPrompt');
+      console.log('[OAuth Debug] User is authenticated. savedPrompt:', savedPrompt, 'hasActiveSubscription:', hasActiveSubscription);
+
+      if (savedPrompt) {
+        // If user has active subscription, they might be returning after Stripe checkout
+        // In this case, set resumeAfterSubscription instead of resumePrompt
+        // to trigger the subscription resume flow
+        if (hasActiveSubscription) {
+          console.log('[OAuth Debug] User has active subscription, triggering subscription resume flow');
+          setResumeAfterSubscription(savedPrompt);
+        } else {
+          // Normal OAuth flow - user just logged in for the first time
+          localStorage.removeItem('pendingPrompt');
+          console.log('[OAuth Debug] Setting resumePrompt:', savedPrompt);
+          setResumePrompt(savedPrompt);
+        }
+      }
+    }
+  }, [isAuthenticated, isAuthLoading, hasActiveSubscription]);
 
   const generateDesignSystemInBackground = async (html: string) => {
     try {
@@ -270,6 +377,7 @@ export default function Home() {
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let buffer = '';
+      let shouldStopGeneration = false; // Flag to break out of SSE loop when paywall triggers
 
       while (true) {
         const { done, value } = await reader.read();
@@ -472,6 +580,9 @@ export default function Home() {
                 const screens = plannedScreensRef.current;
                 const completedScreen = screens[screenIndex];
 
+                // Increment completed screens counter
+                completedScreensCountRef.current += 1;
+
                 // Clear isGenerating on completed node
                 setNodes(prev => prev.map(node => ({
                   ...node,
@@ -522,6 +633,58 @@ export default function Home() {
 
                   return { ...msg, designSteps: steps };
                 });
+
+                // PAYWALL: After 1st screen (design system), stop generation and show subscription modal (unless user has active subscription)
+                if (completedScreensCountRef.current >= 1 && !hasActiveSubscription) {
+                  console.log('[Paywall] Design system generated and no active subscription, triggering subscription modal');
+
+                  // Abort the current generation
+                  if (abortControllerRef.current) {
+                    abortControllerRef.current.abort();
+                    abortControllerRef.current = null;
+                  }
+
+                  // Cancel the reader to stop receiving data
+                  reader.cancel().catch(() => { });
+
+                  // Clear isGenerating on all nodes
+                  setNodes(prev => prev.map(node => ({
+                    ...node,
+                    data: {
+                      ...node.data,
+                      isGenerating: false
+                    }
+                  })));
+
+                  // Stop loading state
+                  setIsLoading(false);
+
+                  // Mark that user has used their free trial (persisted in Convex)
+                  markFreeTrialUsed().catch(console.error);
+
+                  // Save prompt to localStorage before showing subscription modal
+                  // so it can be resumed after Stripe checkout
+                  if (currentPromptRef.current) {
+                    localStorage.setItem('pendingPrompt', currentPromptRef.current);
+                    console.log('[Paywall] Saved prompt to localStorage:', currentPromptRef.current);
+                  }
+
+                  // Show subscription modal
+                  setIsSubscriptionModalOpen(true);
+
+                  // Update message to show paused state
+                  updateLastMessage(msg => ({
+                    ...msg,
+                    isThinkingPaused: true,
+                    designSteps: msg.designSteps?.map(s =>
+                      s.status === 'running' ? { ...s, status: 'completed' as const } : s
+                    ),
+                  }));
+
+                  // Set flag to break out of the SSE reading loop
+                  shouldStopGeneration = true;
+                  break; // Break out of the 'for (const line of lines)' loop
+                }
               }
 
               // Parallel screens start - show all remaining screen loaders at once
@@ -631,12 +794,37 @@ export default function Home() {
                   ...msg,
                   designSteps: msg.designSteps?.map(s => ({ ...s, status: 'completed' as const }))
                 }));
+
+                // Increment the generations used counter
+                incrementGenerationsUsed().catch(err => console.error('[Generations] Failed to increment counter:', err));
+
+                // Save project to Convex
+                const screens = generatedScreensRef.current;
+                if (screens.length > 0 && currentPromptRef.current) {
+                  // Create title from first 50 chars of prompt
+                  const title = currentPromptRef.current.slice(0, 50) + (currentPromptRef.current.length > 50 ? '...' : '');
+
+                  createProject({
+                    title,
+                    prompt: currentPromptRef.current,
+                    screens: screens.map(s => ({
+                      id: s.id,
+                      name: s.name,
+                      html: s.html,
+                    })),
+                  }).catch(err => console.error('[Project] Failed to save project:', err));
+                }
               }
 
             } catch (e) {
               console.error("Error parsing SSE JSON", e);
             }
           }
+        }
+        // Break out of the 'while(true)' loop if paywall was triggered
+        if (shouldStopGeneration) {
+          console.log('[Paywall] Breaking out of SSE reading loop');
+          break;
         }
       }
 
@@ -660,10 +848,37 @@ export default function Home() {
     const userPrompt = input;
     setInput('');
 
-    // Show overload modal immediately
-    setMessages(prev => [...prev, { role: 'user', content: userPrompt }]);
-    setIsOverloadModalOpen(true);
-    return;
+    // Check if user is authenticated
+    if (!isAuthenticated) {
+      // Store the prompt in localStorage directly (useEffect may not run before OAuth redirect)
+      localStorage.setItem('pendingPrompt', userPrompt);
+      console.log('[Auth] Saved pendingPrompt to localStorage:', userPrompt);
+      setPendingPrompt(userPrompt);
+      setIsLoginModalOpen(true);
+      return;
+    }
+
+    // User is authenticated, proceed with generation
+    await processUserPrompt(userPrompt);
+  };
+
+  // Handle successful login - continue with pending prompt
+  const handleLoginSuccess = async () => {
+    setIsLoginModalOpen(false);
+    if (pendingPrompt) {
+      await processUserPrompt(pendingPrompt);
+      setPendingPrompt(null);
+    }
+  };
+
+  // Process user prompt (after auth check)
+  const processUserPrompt = async (userPrompt: string) => {
+    // PAYWALL CHECK: If user has already used free trial and doesn't have subscription, show modal immediately
+    if (hasUsedFreeTrial && !hasActiveSubscription) {
+      console.log('[Paywall] User already used free trial, showing subscription modal immediately');
+      setIsSubscriptionModalOpen(true);
+      return;
+    }
 
     if (isRefiningPlan) {
       setIsRefiningPlan(false);
@@ -735,6 +950,47 @@ export default function Home() {
       await runGeneration({ prompt: userPrompt });
     }
   };
+
+  // Effect to handle resumePrompt after OAuth redirect
+  useEffect(() => {
+    if (resumePrompt) {
+      console.log('[OAuth Debug] Processing resumePrompt:', resumePrompt);
+      const promptToProcess = resumePrompt;
+      setResumePrompt(null); // Clear it to prevent re-triggering
+
+      // Show the user's input in the homepage input field briefly
+      setInput(promptToProcess);
+
+      // Wait 1 second to show homepage with input, then start generation
+      setTimeout(() => {
+        setInput(''); // Clear input before transition
+        processUserPrompt(promptToProcess);
+      }, 1000);
+    }
+  }, [resumePrompt]);
+
+  // Effect to handle resumeAfterSubscription after Stripe checkout success
+  // We wait for hasActiveSubscription to be true before processing
+  useEffect(() => {
+    // If we have a pending prompt and subscription is now active, process it
+    if (resumeAfterSubscription && hasActiveSubscription) {
+      console.log('[Stripe] Processing resumeAfterSubscription:', resumeAfterSubscription);
+      const promptToProcess = resumeAfterSubscription;
+      setResumeAfterSubscription(null); // Clear it to prevent re-triggering
+
+      // Now remove from localStorage since we're about to process
+      localStorage.removeItem('pendingPrompt');
+
+      // Show the user's input in the homepage input field briefly
+      setInput(promptToProcess);
+
+      // Wait 1 second to show homepage with input, then start generation
+      setTimeout(() => {
+        setInput(''); // Clear input before transition
+        processUserPrompt(promptToProcess);
+      }, 1000);
+    }
+  }, [resumeAfterSubscription, hasActiveSubscription]);
 
   const handleClarificationSubmit = async (answers: ClarificationAnswer[]) => {
     const answer = answers[0];
@@ -912,6 +1168,7 @@ export default function Home() {
     designSystemMarkdownRef.current = null;
     designSystemOptionsRef.current = null;
     selectedDesignSystemRef.current = null;
+    completedScreensCountRef.current = 0;
     setIsResetModalOpen(false);
     setIsSidebarOpen(true);
     setInput('');
@@ -1040,79 +1297,153 @@ export default function Home() {
             initial={{ opacity: 1 }}
             exit={{ opacity: 0, scale: 0.98 }}
             transition={{ duration: 0.4, ease: "easeOut" }}
-            className="absolute inset-0 flex items-center justify-center p-6 z-20 bg-[#1e1e1e]"
+            className="absolute inset-0 flex flex-col p-6 z-20 bg-[#1e1e1e]"
           >
-            <div className="w-full max-w-xl flex flex-col items-center gap-8">
-              {/* Header */}
-              <div className="text-center space-y-3">
+            {/* Top header with My Projects & Log Out */}
+            {isAuthenticated && (
+              <motion.div
+                initial={{ opacity: 0, y: -10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.3 }}
+                className="absolute top-4 right-4 flex items-center gap-2"
+              >
+                <Link
+                  href="/subscription"
+                  className="px-3 py-1.5 text-xs text-zinc-400 hover:text-blue-400 hover:bg-blue-500/10 rounded-md transition-colors"
+                >
+                  Subscription
+                </Link>
+                <Link
+                  href="/projects"
+                  className="px-3 py-1.5 text-xs text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-md transition-colors"
+                >
+                  My Projects
+                </Link>
+                <button
+                  onClick={() => signOut()}
+                  className="px-3 py-1.5 text-xs text-zinc-400 hover:text-red-400 hover:bg-red-500/10 rounded-md transition-colors cursor-pointer"
+                >
+                  Log Out
+                </button>
+              </motion.div>
+            )}
+
+            {/* Login button for non-authenticated users */}
+            {!isAuthenticated && !isAuthLoading && (
+              <motion.div
+                initial={{ opacity: 0, y: -10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.3 }}
+                className="absolute top-4 right-4"
+              >
+                <button
+                  onClick={() => setIsLoginModalOpen(true)}
+                  className="px-3 py-1.5 text-xs text-zinc-400 hover:text-blue-400 hover:bg-blue-500/10 rounded-md transition-colors cursor-pointer"
+                >
+                  Login
+                </button>
+              </motion.div>
+            )}
+
+            <div className="flex-1 flex items-center justify-center">
+              <div className="w-full max-w-xl flex flex-col items-center gap-8">
+                {/* Header */}
+                <div className="text-center space-y-3">
+                  <motion.div
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.5 }}
+                    className="flex items-center justify-center gap-2.5"
+                  >
+                    <div className="w-10 h-10 bg-blue-500/10 border border-blue-500/20 rounded-xl flex items-center justify-center">
+                      <AiPaintbrush size={20} className="text-blue-400" />
+                    </div>
+                    <h1 className="text-2xl font-semibold text-zinc-100">Draftly</h1>
+                  </motion.div>
+                  <motion.p
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.5, delay: 0.1 }}
+                    className="text-sm text-zinc-500"
+                  >
+                    {isAuthenticated && firstName
+                      ? `Hi ${firstName}, describe your app idea and get instant UI design`
+                      : 'Describe your app idea and get instant UI designs'
+                    }
+                  </motion.p>
+                </div>
+
+                {/* Input */}
+                <motion.form
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.5, delay: 0.15 }}
+                  onSubmit={sendMessage}
+                  className="w-full"
+                >
+                  <div className="relative">
+                    <input
+                      type="text"
+                      value={input}
+                      onChange={(e) => setInput(e.target.value)}
+                      placeholder="Describe your app..."
+                      className="w-full h-11 bg-[#252526] border border-[#3e3e42] text-xs text-zinc-200 rounded-lg px-4 pr-11 focus:outline-none focus:border-blue-500/40 focus:ring-1 focus:ring-blue-500/20 transition-all placeholder:text-zinc-600"
+                      autoFocus
+                    />
+                    <button
+                      type="submit"
+                      disabled={isLoading || !input.trim()}
+                      className="absolute right-1.5 top-1/2 -translate-y-1/2 w-8 h-8 rounded-md flex items-center justify-center text-zinc-500 hover:text-blue-400 hover:bg-blue-500/10 disabled:text-zinc-700 disabled:hover:bg-transparent transition-colors cursor-pointer disabled:cursor-not-allowed"
+                    >
+                      <Send size={14} />
+                    </button>
+                  </div>
+                  {/* Remaining Generations Counter - inline below input */}
+                  {isAuthenticated && generationsData && (
+                    <div className="flex justify-start mt-1.5 pl-1">
+                      <div className="flex items-center gap-1.5">
+                        <div className={`w-1.5 h-1.5 rounded-full ${generationsData.remaining === -1
+                          ? 'bg-emerald-400'
+                          : generationsData.remaining > 5
+                            ? 'bg-emerald-400'
+                            : generationsData.remaining > 0
+                              ? 'bg-amber-400'
+                              : 'bg-red-400'
+                          }`} />
+                        <span className="text-[9px] text-zinc-500">
+                          {generationsData.remaining === -1
+                            ? 'Unlimited generations'
+                            : generationsData.remaining === 0
+                              ? 'No generations left'
+                              : `${generationsData.remaining} generation${generationsData.remaining > 1 ? 's' : ''} remaining`
+                          }
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                </motion.form>
+
+                {/* Suggestions */}
                 <motion.div
                   initial={{ opacity: 0, y: 8 }}
                   animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.5 }}
-                  className="flex items-center justify-center gap-2.5"
+                  transition={{ duration: 0.5, delay: 0.2 }}
+                  className="w-full space-y-2"
                 >
-                  <div className="w-10 h-10 bg-blue-500/10 border border-blue-500/20 rounded-xl flex items-center justify-center">
-                    <AiPaintbrush size={20} className="text-blue-400" />
+                  <p className="text-[10px] text-zinc-600 uppercase tracking-wider px-1 text-center">Try an example</p>
+                  <div className="flex flex-wrap justify-center gap-2">
+                    {SUGGESTIONS.map((s) => (
+                      <button
+                        key={s.title}
+                        onClick={() => setInput(s.prompt)}
+                        className="px-3 py-1.5 bg-[#252526] hover:bg-[#3e3e42] border border-[#3e3e42] rounded-full text-[11px] text-zinc-400 hover:text-zinc-200 transition-all cursor-pointer"
+                      >
+                        {s.title}
+                      </button>
+                    ))}
                   </div>
-                  <h1 className="text-2xl font-semibold text-zinc-100">Draftly</h1>
                 </motion.div>
-                <motion.p
-                  initial={{ opacity: 0, y: 8 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.5, delay: 0.1 }}
-                  className="text-sm text-zinc-500"
-                >
-                  Describe your app idea and get instant UI designs
-                </motion.p>
               </div>
-
-              {/* Input */}
-              <motion.form
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.5, delay: 0.15 }}
-                onSubmit={sendMessage}
-                className="w-full"
-              >
-                <div className="relative">
-                  <input
-                    type="text"
-                    value={input}
-                    onChange={(e) => setInput(e.target.value)}
-                    placeholder="Describe your app..."
-                    className="w-full h-11 bg-[#252526] border border-[#3e3e42] text-xs text-zinc-200 rounded-lg px-4 pr-11 focus:outline-none focus:border-blue-500/40 focus:ring-1 focus:ring-blue-500/20 transition-all placeholder:text-zinc-600"
-                    autoFocus
-                  />
-                  <button
-                    type="submit"
-                    disabled={isLoading || !input.trim()}
-                    className="absolute right-1.5 top-1/2 -translate-y-1/2 w-8 h-8 rounded-md flex items-center justify-center text-zinc-500 hover:text-blue-400 hover:bg-blue-500/10 disabled:text-zinc-700 disabled:hover:bg-transparent transition-colors cursor-pointer disabled:cursor-not-allowed"
-                  >
-                    <Send size={14} />
-                  </button>
-                </div>
-              </motion.form>
-
-              {/* Suggestions */}
-              <motion.div
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.5, delay: 0.2 }}
-                className="w-full space-y-2"
-              >
-                <p className="text-[10px] text-zinc-600 uppercase tracking-wider px-1 text-center">Try an example</p>
-                <div className="flex flex-wrap justify-center gap-2">
-                  {SUGGESTIONS.map((s) => (
-                    <button
-                      key={s.title}
-                      onClick={() => setInput(s.prompt)}
-                      className="px-3 py-1.5 bg-[#252526] hover:bg-[#3e3e42] border border-[#3e3e42] rounded-full text-[11px] text-zinc-400 hover:text-zinc-200 transition-all cursor-pointer"
-                    >
-                      {s.title}
-                    </button>
-                  ))}
-                </div>
-              </motion.div>
             </div>
           </motion.div>
         )}
@@ -1142,6 +1473,7 @@ export default function Home() {
                 </div>
                 <span className="font-semibold text-sm">Draftly</span>
               </button>
+
               <button
                 onClick={() => setIsSidebarOpen(false)}
                 className="text-zinc-500 hover:text-white cursor-pointer p-1 rounded-md hover:bg-white/5 transition-colors"
@@ -1365,6 +1697,26 @@ export default function Home() {
 
               <HelpBubble />
 
+              {/* Generations counter bubble */}
+              {isAuthenticated && generationsData && (
+                <div className="absolute top-6 right-6 z-50 flex items-center gap-2 bg-[#252526]/90 backdrop-blur-md border border-[#3e3e42] px-3 py-2 rounded-full shadow-xl ring-1 ring-black/20">
+                  <div className={`w-2 h-2 rounded-full ${generationsData.remaining === -1
+                    ? 'bg-emerald-400'
+                    : generationsData.remaining > 5
+                      ? 'bg-emerald-400'
+                      : generationsData.remaining > 0
+                        ? 'bg-amber-400'
+                        : 'bg-red-400'
+                    }`} />
+                  <span className="text-[11px] text-zinc-400">
+                    {generationsData.remaining === -1
+                      ? 'Unlimited'
+                      : `${generationsData.remaining} generation${generationsData.remaining > 1 ? 's' : ''} left`
+                    }
+                  </span>
+                </div>
+              )}
+
               {/* Export Menu (Removed) */}
 
             </div>
@@ -1584,6 +1936,20 @@ export default function Home() {
       <OverloadModal
         isOpen={isOverloadModalOpen}
         onClose={() => setIsOverloadModalOpen(false)}
+      />
+
+      <SubscriptionModal
+        isOpen={isSubscriptionModalOpen}
+        onClose={() => setIsSubscriptionModalOpen(false)}
+        generatedScreensCount={completedScreensCountRef.current}
+      />
+
+      <LoginModal
+        isOpen={isLoginModalOpen}
+        onClose={() => {
+          setIsLoginModalOpen(false);
+          setPendingPrompt(null);
+        }}
       />
     </div>
   );

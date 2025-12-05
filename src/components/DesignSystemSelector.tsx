@@ -67,9 +67,14 @@ export default function DesignSystemSelector({ options, onSubmit, submittedSelec
     // No cleanup - keep fonts loaded
   }, [options.fonts]);
 
+  // Collapse when submitted (using useEffect with proper cleanup pattern)
   useEffect(() => {
     if (submittedSelection) {
-      setIsExpanded(false);
+      // Use requestAnimationFrame to defer the state update
+      const rafId = requestAnimationFrame(() => {
+        setIsExpanded(false);
+      });
+      return () => cancelAnimationFrame(rafId);
     }
   }, [submittedSelection]);
 
