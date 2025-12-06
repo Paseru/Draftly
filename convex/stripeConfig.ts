@@ -1,9 +1,14 @@
 /**
- * Stripe Configuration - Single Source of Truth
+ * Stripe Configuration - SERVER-SIDE ONLY
  * 
- * All Stripe price IDs and plan details should be imported from this file.
- * This prevents duplication and ensures consistency across the codebase.
+ * ⚠️ WARNING: This file contains Convex server functions.
+ * DO NOT import this file from client-side code (React components).
+ * 
+ * For client-side plan details, use: src/lib/stripePlans.ts
  */
+
+import { query } from "./_generated/server";
+import { PLAN_DETAILS } from "../src/lib/stripePlans";
 
 // Price IDs from Convex environment variables (different for dev vs prod)
 export const STRIPE_PRICES = {
@@ -14,49 +19,6 @@ export const STRIPE_PRICES = {
 
 // Valid price IDs for validation (used server-side)
 export const VALID_PRICE_IDS = Object.values(STRIPE_PRICES);
-
-// Plan details for UI display
-export const PLAN_DETAILS = {
-    starter: {
-        id: 'starter',
-        name: 'Starter',
-        price: 19,
-        period: 'month',
-        generations: 10,
-        features: [
-            '10 app generations per month',
-            'Full app generation with all screens',
-            'Export your designs anytime',
-        ],
-        popular: false,
-    },
-    pro: {
-        id: 'pro',
-        name: 'Pro',
-        price: 49,
-        period: 'month',
-        generations: 50,
-        features: [
-            '50 app generations per month',
-            'Full app generation with all screens',
-            'Export your designs anytime',
-        ],
-        popular: true,
-    },
-    enterprise: {
-        id: 'enterprise',
-        name: 'Enterprise',
-        price: 149,
-        period: 'month',
-        generations: -1, // Unlimited
-        features: [
-            'Unlimited generations',
-            'Full app generation with all screens',
-            'Export your designs anytime',
-        ],
-        popular: false,
-    },
-} as const;
 
 // Plan generation limits (used for quota checking)
 export const PLAN_LIMITS = {
@@ -76,3 +38,16 @@ export function getPlanFromPriceId(priceId: string): 'starter' | 'pro' | 'enterp
 // Type exports
 export type PlanId = keyof typeof STRIPE_PRICES;
 export type PriceId = typeof STRIPE_PRICES[PlanId];
+
+// ============================================
+// Convex Query to expose prices to client
+// ============================================
+export const getStripePrices = query({
+    args: {},
+    handler: async () => {
+        return {
+            prices: STRIPE_PRICES,
+            planDetails: PLAN_DETAILS,
+        };
+    },
+});

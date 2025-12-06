@@ -6,7 +6,7 @@ import { api } from '../../../convex/_generated/api';
 import { useConvexAuth } from 'convex/react';
 import { ArrowLeft, Loader2, Check, Crown, Zap, Layers, CreditCard } from 'lucide-react';
 import Link from 'next/link';
-import { STRIPE_PRICES, PLAN_DETAILS } from '../../../convex/stripeConfig';
+import { PLAN_DETAILS } from '@/lib/stripePlans';
 
 // Icon mapping for plans
 const planIcons = {
@@ -14,13 +14,6 @@ const planIcons = {
     pro: Zap,
     enterprise: Crown,
 } as const;
-
-// Build plans array from centralized config
-const plans = Object.entries(PLAN_DETAILS).map(([key, details]) => ({
-    ...details,
-    icon: planIcons[key as keyof typeof planIcons],
-    priceId: STRIPE_PRICES[key as keyof typeof STRIPE_PRICES],
-}));
 
 function formatDate(timestamp: number): string {
     const timestampMs = timestamp > 1e12 ? timestamp : timestamp * 1000;
@@ -39,6 +32,16 @@ export default function SubscriptionPage() {
     const { isAuthenticated, isLoading: isAuthLoading } = useConvexAuth();
     const subscription = useQuery(api.stripe.getUserSubscription);
     const generationsData = useQuery(api.users.getGenerationsRemaining);
+
+    // Fetch prices dynamically from Convex server
+    const stripePricesData = useQuery(api.stripeConfig.getStripePrices);
+
+    // Build plans array dynamically once prices are loaded
+    const plans = stripePricesData ? Object.entries(PLAN_DETAILS).map(([key, details]) => ({
+        ...details,
+        icon: planIcons[key as keyof typeof planIcons],
+        priceId: stripePricesData.prices[key as keyof typeof stripePricesData.prices],
+    })) : [];
 
     const createCheckout = useAction(api.stripe.createSubscriptionCheckout);
     const createBillingPortal = useAction(api.stripe.createBillingPortalSession);
@@ -114,7 +117,7 @@ export default function SubscriptionPage() {
     };
 
     // Loading state
-    if (isAuthLoading || subscription === undefined) {
+    if (isAuthLoading || subscription === undefined || !stripePricesData) {
         return (
             <div className="h-screen w-full bg-[#1e1e1e] flex items-center justify-center font-mono">
                 <Loader2 className="w-6 h-6 text-blue-400 animate-spin" />

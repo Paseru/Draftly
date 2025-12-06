@@ -12,6 +12,11 @@ export const createProject = mutation({
             name: v.string(),
             html: v.string(),
         })),
+        flows: v.optional(v.array(v.object({
+            from: v.string(),
+            to: v.string(),
+            label: v.optional(v.string()),
+        }))),
     },
     handler: async (ctx, args) => {
         const userId = await getAuthUserId(ctx);
@@ -27,6 +32,7 @@ export const createProject = mutation({
             title: args.title,
             prompt: args.prompt,
             screens: args.screens,
+            flows: args.flows,
             previewHtml,
             createdAt: now,
             updatedAt: now,

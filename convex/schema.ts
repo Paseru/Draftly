@@ -41,6 +41,12 @@ export default defineSchema({
             name: v.string(),
             html: v.string(),
         })),
+        // Store flows for edge restoration
+        flows: v.optional(v.array(v.object({
+            from: v.string(),
+            to: v.string(),
+            label: v.optional(v.string()),
+        }))),
         previewHtml: v.optional(v.string()),
         createdAt: v.number(),
         updatedAt: v.number(),

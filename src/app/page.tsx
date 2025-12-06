@@ -207,6 +207,8 @@ export default function Home() {
 
   // State to trigger generation after Stripe subscription success
   const [resumeAfterSubscription, setResumeAfterSubscription] = useState<string | null>(null);
+  // Ref to track if we already processed Stripe return (prevents double trigger from OAuth effect)
+  const stripeReturnProcessedRef = useRef(false);
 
   // Handle Stripe checkout success/cancel URL params AND project loading
   useEffect(() => {
@@ -226,17 +228,19 @@ export default function Home() {
       if (subscriptionStatus === 'success') {
         // Remove the URL param without refreshing
         window.history.replaceState({}, '', window.location.pathname);
-        // Clear the stripe flag since subscription completed
-        localStorage.removeItem('pendingPromptSource');
         console.log('[Stripe] Subscription successful!');
 
-        // Check if there's a pending prompt to resume
-        // Don't remove from localStorage yet - we'll do that when we actually start processing
-        // This ensures we don't lose the prompt if hasActiveSubscription takes time to update
+        // Get and immediately clear the pending prompt from localStorage
+        // to prevent OAuth effect from also triggering
         const savedPrompt = localStorage.getItem('pendingPrompt');
+        localStorage.removeItem('pendingPrompt');
+        localStorage.removeItem('pendingPromptSource');
+
         console.log('[Stripe] Checking for pending prompt:', savedPrompt);
         if (savedPrompt) {
-          // Keep in localStorage, just set state to trigger the resume effect
+          // Mark that we processed the Stripe return
+          stripeReturnProcessedRef.current = true;
+          // Set state to trigger the resume effect
           setResumeAfterSubscription(savedPrompt);
         }
       } else if (subscriptionStatus === 'canceled') {
@@ -244,6 +248,7 @@ export default function Home() {
         // This prevents the OAuth effect from restarting generation
         window.history.replaceState({}, '', window.location.pathname);
         localStorage.removeItem('pendingPrompt');
+        localStorage.removeItem('pendingPromptSource');
         console.log('[Stripe] Checkout canceled, cleared pendingPrompt');
       }
     }
@@ -268,6 +273,18 @@ export default function Home() {
       return;
     }
 
+    // Skip if we already processed a Stripe return (prevents double trigger)
+    if (stripeReturnProcessedRef.current) {
+      console.log('[OAuth Debug] Stripe return already processed, skipping OAuth handler');
+      return;
+    }
+
+    // Skip if resumeAfterSubscription is already set (another effect already triggered)
+    if (resumeAfterSubscription) {
+      console.log('[OAuth Debug] resumeAfterSubscription already set, skipping');
+      return;
+    }
+
     // Check if user just logged in and has a pending prompt
     if (isAuthenticated) {
       const savedPrompt = localStorage.getItem('pendingPrompt');
@@ -279,6 +296,8 @@ export default function Home() {
         // to trigger the subscription resume flow
         if (hasActiveSubscription) {
           console.log('[OAuth Debug] User has active subscription, triggering subscription resume flow');
+          localStorage.removeItem('pendingPrompt');
+          localStorage.removeItem('pendingPromptSource');
           setResumeAfterSubscription(savedPrompt);
         } else {
           // Check if this prompt was saved by the paywall (Stripe flow)
@@ -297,7 +316,7 @@ export default function Home() {
         }
       }
     }
-  }, [isAuthenticated, isAuthLoading, hasActiveSubscription]);
+  }, [isAuthenticated, isAuthLoading, hasActiveSubscription, resumeAfterSubscription]);
 
   const generateDesignSystemInBackground = async (html: string) => {
     try {
@@ -404,49 +423,95 @@ export default function Home() {
       plannedScreensRef.current = loadedProject.screens.map(s => ({
         id: s.id,
         name: s.name,
-        description: '', // Not stored, use empty
+        description: '',
       }));
 
-      // Create ReactFlow nodes from screens using grid layout
+      // Restore flows if available
+      const restoredFlows: ScreenFlow[] = (loadedProject.flows || []).map((f, index) => ({
+        id: `flow_${index}`,
+        from: f.from,
+        to: f.to,
+        label: f.label || '',
+      }));
+      plannedFlowsRef.current = restoredFlows;
+
+      // Create ReactFlow nodes using proper layout computation
       const config = getLayoutConfig(viewMode);
-      const cols = viewMode === 'mobile' ? 4 : 2;
-      const w = config.nodeWidth;
-      const h = config.nodeHeight;
-      const gap = config.horizontalGap;
 
-      const newNodes: Node[] = loadedProject.screens.map((screen, index) => {
-        const col = index % cols;
-        const row = Math.floor(index / cols);
+      let newNodes: Node[];
+      if (restoredFlows.length > 0 && plannedScreensRef.current.length > 0) {
+        // Use flow-based layout if flows are available
+        const positions = computeFlowLayout(plannedScreensRef.current, restoredFlows, config);
+        const positionMap = new Map(positions.map(p => [p.id, p]));
 
-        return {
-          id: screen.id,
-          type: 'previewNode',
-          position: { x: col * (w + gap), y: row * (h + gap) },
-          data: {
-            label: screen.name,
-            html: screen.html,
-            viewMode,
-            isGenerating: false,
-            onExpand: handleExpand,
-            onShowCode: handleShowCode,
-            onFocus: handleFocus,
-          },
-        };
-      });
+        newNodes = loadedProject.screens.map((screen) => {
+          const pos = positionMap.get(screen.id);
+          return {
+            id: screen.id,
+            type: 'previewNode',
+            position: pos ? { x: pos.x, y: pos.y } : { x: 0, y: 0 },
+            data: {
+              label: screen.name,
+              html: screen.html,
+              viewMode,
+              isGenerating: false,
+              onExpand: handleExpand,
+              onShowCode: handleShowCode,
+              onFocus: handleFocus,
+            },
+          };
+        });
+      } else {
+        // Fallback to grid layout
+        const cols = viewMode === 'mobile' ? 4 : 2;
+        const w = config.nodeWidth;
+        const h = config.nodeHeight;
+        const gap = config.horizontalGap;
 
-      // Set nodes and show workspace
+        newNodes = loadedProject.screens.map((screen, index) => {
+          const col = index % cols;
+          const row = Math.floor(index / cols);
+
+          return {
+            id: screen.id,
+            type: 'previewNode',
+            position: { x: col * (w + gap), y: row * (h + gap) },
+            data: {
+              label: screen.name,
+              html: screen.html,
+              viewMode,
+              isGenerating: false,
+              onExpand: handleExpand,
+              onShowCode: handleShowCode,
+              onFocus: handleFocus,
+            },
+          };
+        });
+      }
+
+      // Create edges from flows
+      const newEdges: Edge[] = restoredFlows.map((flow, index) => ({
+        id: `edge-${flow.from}-${flow.to}-${index}`,
+        source: flow.from,
+        target: flow.to,
+        type: 'animatedEdge',
+        label: flow.label || undefined,
+        animated: false,
+      }));
+
+      // Set nodes, edges and show workspace
       setNodes(newNodes);
+      setEdges(newEdges);
       setHasStarted(true);
       setIsSidebarOpen(true);
 
-      // Update messages to show completion state
+      // Update messages - simple state without extra "project restored" text
       setMessages([
         { role: 'assistant', content: 'Hey ! How can i help you design your app today ?' },
         { role: 'user', content: loadedProject.prompt },
         {
           role: 'assistant',
           content: '',
-          completionMessage: `Project loaded: ${loadedProject.screens.length} screen${loadedProject.screens.length !== 1 ? 's' : ''} restored.`,
           designSteps: loadedProject.screens.map((s) => ({
             id: `page-${s.id}`,
             label: `Page ${s.name} generated`,
@@ -463,9 +528,9 @@ export default function Home() {
       // Clear the loaded project ID to prevent re-triggering
       setLoadedProjectId(null);
 
-      console.log('[Project] Workspace restored with', loadedProject.screens.length, 'screens');
+      console.log('[Project] Workspace restored with', loadedProject.screens.length, 'screens and', restoredFlows.length, 'flows');
     }
-  }, [loadedProject, loadedProjectId, viewMode, handleExpand, handleShowCode, handleFocus, setNodes]);
+  }, [loadedProject, loadedProjectId, viewMode, handleExpand, handleShowCode, handleFocus, setNodes, setEdges]);
 
   const updateLastMessage = (updater: (msg: Message) => Message) => {
     setMessages(prev => {
@@ -802,15 +867,13 @@ export default function Home() {
                   return { ...msg, designSteps: steps };
                 });
 
-                // PAYWALL: After 1st screen (design system), check if user has generations remaining (or unlimited)
-                // We access the ref for generationsData if possible, or use the logic:
-                // If they have 0 remaining, they shouldn't have been able to start. 
-                // But if they started with 1, and decrement happens at the END, this check is redundant unless it's strictly for Free Trial enforcement.
-                // We'll trust the start-of-generation check for now, but to be safe, only block if they have NO subscription AND 0 remaining.
-                // Better yet, just check if they are "out of quota" based on what we know.
-                // Since we don't have fresh generationsData here easily without a ref, we'll rely on the initial check.
-                // However, preserving the spirit of the "1 screen free trial":
-                if (completedScreensCountRef.current >= 1 && (!hasActiveSubscription && (!generationsData || generationsData.remaining === 0))) {
+                // PAYWALL: After 1st screen (design system), check if user should be blocked
+                // Free trial users get 1 screen only - block them after the first screen completes
+                // Users with a subscription (remaining > 0 or unlimited = -1) can continue
+                const isFreeTrialUser = !hasActiveSubscription || (generationsData?.plan === 'free');
+                const shouldBlockForPaywall = completedScreensCountRef.current >= 1 && isFreeTrialUser;
+
+                if (shouldBlockForPaywall) {
                   console.log('[Paywall] Design system generated and no active subscription/credits, triggering subscription modal');
 
                   // Abort the current generation
@@ -1003,6 +1066,11 @@ export default function Home() {
                       name: s.name,
                       html: s.html,
                     })),
+                    flows: plannedFlowsRef.current.map(f => ({
+                      from: f.from,
+                      to: f.to,
+                      label: f.label,
+                    })),
                   }).catch(err => console.error('[Project] Failed to save project:', err));
                 }
               }
@@ -1162,16 +1230,14 @@ export default function Home() {
 
   // Effect to handle resumeAfterSubscription after Stripe checkout success
   // We wait for hasActiveSubscription to be true before processing
+  const resumeProcessedRef = useRef(false);
   useEffect(() => {
     // If we have a pending prompt and subscription is now active, process it
-    if (resumeAfterSubscription && hasActiveSubscription) {
+    if (resumeAfterSubscription && hasActiveSubscription && !resumeProcessedRef.current) {
       console.log('[Stripe] Processing resumeAfterSubscription:', resumeAfterSubscription);
+      resumeProcessedRef.current = true; // Guard against double execution
       const promptToProcess = resumeAfterSubscription;
       setResumeAfterSubscription(null); // Clear it to prevent re-triggering
-
-      // Now remove from localStorage since we're about to process
-      localStorage.removeItem('pendingPrompt');
-      localStorage.removeItem('pendingPromptSource');
 
       // Show the user's input in the homepage input field briefly
       setInput(promptToProcess);

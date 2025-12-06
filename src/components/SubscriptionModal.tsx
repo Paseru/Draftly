@@ -2,9 +2,9 @@
 
 import React, { useState } from 'react';
 import { X, Rocket, Zap, Crown, Check, Loader2, Layers } from 'lucide-react';
-import { useAction } from 'convex/react';
+import { useAction, useQuery } from 'convex/react';
 import { api } from '../../convex/_generated/api';
-import { STRIPE_PRICES, PLAN_DETAILS } from '../../convex/stripeConfig';
+import { PLAN_DETAILS } from '@/lib/stripePlans';
 
 interface SubscriptionModalProps {
     isOpen: boolean;
@@ -19,18 +19,21 @@ const planIcons = {
     enterprise: Crown,
 } as const;
 
-// Build plans array from centralized config
-const plans = Object.entries(PLAN_DETAILS).map(([key, details]) => ({
-    ...details,
-    icon: planIcons[key as keyof typeof planIcons],
-    priceId: STRIPE_PRICES[key as keyof typeof STRIPE_PRICES],
-}));
-
 export default function SubscriptionModal({ isOpen, onClose, generatedScreensCount = 2 }: SubscriptionModalProps) {
     const [loadingPlanId, setLoadingPlanId] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
 
     const createCheckout = useAction(api.stripe.createSubscriptionCheckout);
+
+    // Fetch prices dynamically from Convex server
+    const stripePricesData = useQuery(api.stripeConfig.getStripePrices);
+
+    // Build plans array dynamically once prices are loaded
+    const plans = stripePricesData ? Object.entries(PLAN_DETAILS).map(([key, details]) => ({
+        ...details,
+        icon: planIcons[key as keyof typeof planIcons],
+        priceId: stripePricesData.prices[key as keyof typeof stripePricesData.prices],
+    })) : [];
 
     const handleSubscribe = async (planId: string, priceId: string) => {
         setLoadingPlanId(planId);
@@ -56,6 +59,20 @@ export default function SubscriptionModal({ isOpen, onClose, generatedScreensCou
 
     if (!isOpen) return null;
 
+    // Show loading state while fetching prices
+    if (!stripePricesData) {
+        return (
+            <div
+                className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-200"
+                onClick={(e) => e.target === e.currentTarget && onClose()}
+            >
+                <div className="bg-[#1e1e1e] border border-[#27272a] rounded-xl shadow-2xl p-8">
+                    <Loader2 className="w-6 h-6 text-blue-400 animate-spin" />
+                </div>
+            </div>
+        );
+    }
+
     return (
         <div
             className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-200"
@@ -69,10 +86,10 @@ export default function SubscriptionModal({ isOpen, onClose, generatedScreensCou
                             <div className="p-1.5 bg-blue-500/10 rounded-md">
                                 <Rocket className="w-4 h-4 text-blue-400" />
                             </div>
-                            <h3 className="text-sm font-semibold text-white">Unlock Full Power</h3>
+                            <h3 className="text-sm font-semibold text-white">Oh no, you&apos;ve run out of credits!</h3>
                         </div>
                         <p className="text-xs text-zinc-400">
-                            You&apos;ve generated {generatedScreensCount} screens. Subscribe to continue creating amazing apps.
+                            Your free trial is over. Subscribe now to continue creating your {generatedScreensCount}-screen app.
                         </p>
                     </div>
                     <button
