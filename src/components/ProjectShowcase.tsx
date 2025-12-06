@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import { useQuery } from 'convex/react';
 import { api } from '../../convex/_generated/api';
 import { X, Monitor, Smartphone } from 'lucide-react';
+import Image from 'next/image';
 import { StreamingIframe } from './PreviewNode';
 
 function getRelativeTime(timestamp: number): string {
@@ -25,6 +26,7 @@ type ProjectType = {
     title: string;
     screens: { id: string; name: string; html: string }[];
     previewImage?: string;
+    previewHtml?: string;
     authorName?: string;
     createdAt: number;
 };
@@ -71,10 +73,13 @@ export default function ProjectShowcase() {
                                 {/* Preview */}
                                 <div className="relative w-full aspect-[16/10] bg-[#1a1a1a] overflow-hidden">
                                     {project.previewImage ? (
-                                        <img
+                                        <Image
                                             src={project.previewImage}
                                             alt={project.title}
-                                            className="w-full h-full object-cover object-top"
+                                            fill
+                                            unoptimized
+                                            className="object-cover object-top"
+                                            sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
                                         />
                                     ) : cardHtml ? (
                                         <div className="absolute inset-0 origin-top-left scale-[0.2] w-[500%] h-[500%]">

@@ -15,7 +15,7 @@ import {
   ReactFlowInstance
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import { Send, Terminal, X, Code as CodeIcon, ChevronLeft, ChevronRight, Monitor, Smartphone, Download, RotateCcw, Palette } from 'lucide-react';
+import { Send, X, Code as CodeIcon, ChevronLeft, ChevronRight, Monitor, Smartphone, Download, RotateCcw, Palette } from 'lucide-react';
 import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
 import AiPaintbrush from '@/components/ui/AiPaintbrush';
@@ -98,7 +98,7 @@ export default function Home() {
   const [isRefiningPlan, setIsRefiningPlan] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [viewMode, setViewMode] = useState<'desktop' | 'mobile'>('desktop');
-  const [isExportOpen, setIsExportOpen] = useState(false);
+  const [, setIsExportOpen] = useState(false);
   const [isResetModalOpen, setIsResetModalOpen] = useState(false);
   const [isOverloadModalOpen, setIsOverloadModalOpen] = useState(false);
   const [isSubscriptionModalOpen, setIsSubscriptionModalOpen] = useState(false);
@@ -113,7 +113,6 @@ export default function Home() {
   const hasActiveSubscription = useQuery(api.stripe.hasActiveSubscription) ?? false;
 
   // Check if user has already used their free trial (stored in Convex)
-  const hasUsedFreeTrial = useQuery(api.users.hasUsedFreeTrial) ?? false;
   const currentUser = useQuery(api.users.getCurrentUser);
   const markFreeTrialUsed = useMutation(api.users.markFreeTrialUsed);
   const incrementGenerationsUsed = useMutation(api.users.incrementGenerationsUsed);
@@ -643,7 +642,10 @@ export default function Home() {
 
       // Fit view after nodes are set (retry until instance is ready)
       const fitViewWithRetry = (attempt = 0) => {
-        const instance = reactFlowInstance.current;
+        const instance = reactFlowInstance.current as ReactFlowInstance & {
+          updateNodeInternals?: (ids: string[]) => void;
+        };
+
         if (instance) {
           instance.updateNodeInternals?.(newNodes.map(n => n.id));
           instance.fitView({ duration: 800, padding: 0.15 });
@@ -661,7 +663,7 @@ export default function Home() {
     }
   }, [loadedProject, loadedProjectId, viewMode, handleExpand, handleShowCode, handleFocus, setNodes, setEdges]);
 
-  const updateLastMessage = (updater: (msg: Message) => Message) => {
+  const updateLastMessage = useCallback((updater: (msg: Message) => Message) => {
     setMessages(prev => {
       const newMsgs = [...prev];
       const lastIndex = newMsgs.length - 1;
@@ -670,7 +672,7 @@ export default function Home() {
       }
       return newMsgs;
     });
-  };
+  }, []);
 
   const [input, setInput] = useState('');
   const [messages, setMessages] = useState<Message[]>([
@@ -690,20 +692,7 @@ export default function Home() {
     messagesRef.current = messages;
   }, [messages]);
 
-  const handleStop = () => {
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort();
-      abortControllerRef.current = null;
-      setIsLoading(false);
-      updateLastMessage(msg => ({
-        ...msg,
-        isThinkingPaused: true,
-        designSteps: msg.designSteps?.map(s => s.status === 'running' ? { ...s, status: 'completed' as const, label: s.label + ' (paused)' } : s),
-      }));
-    }
-  };
-
-  const runGeneration = async (payload: Record<string, unknown>, isDesignPhase = false) => {
+  const runGeneration = useCallback(async (payload: Record<string, unknown>, isDesignPhase = false) => {
     if (isLoading) return;
 
     setIsLoading(true);
@@ -1304,7 +1293,22 @@ export default function Home() {
       setIsLoading(false);
       abortControllerRef.current = null;
     }
-  };
+  }, [
+    createProject,
+    generationsData,
+    hasActiveSubscription,
+    incrementGenerationsUsed,
+    isLoading,
+    markFreeTrialUsed,
+    setHasStarted,
+    setIsLoading,
+    setIsOverloadModalOpen,
+    setIsSubscriptionModalOpen,
+    setMessages,
+    setNodes,
+    setStallWarning,
+    updateLastMessage
+  ]);
 
   const sendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1327,17 +1331,32 @@ export default function Home() {
     await processUserPrompt(userPrompt);
   };
 
-  // Handle successful login - continue with pending prompt
-  const handleLoginSuccess = async () => {
-    setIsLoginModalOpen(false);
-    if (pendingPrompt) {
-      await processUserPrompt(pendingPrompt);
-      setPendingPrompt(null);
-    }
-  };
+  const handlePlanRefine = useCallback(async (feedback: string) => {
+    const currentPlan = [...plannedScreensRef.current];
+
+    updateLastMessage(msg => ({
+      ...msg,
+      isPlanReady: false,
+      plannedScreens: null
+    }));
+
+    conversationHistoryRef.current.push({
+      type: 'plan_feedback',
+      feedback: feedback
+    });
+
+    setMessages(prev => [...prev, { role: 'user', content: `Changes requested: ${feedback}` }]);
+
+    await runGeneration({
+      prompt: currentPromptRef.current,
+      conversationHistory: conversationHistoryRef.current,
+      plannedScreens: currentPlan,
+      planFeedback: feedback
+    });
+  }, [runGeneration, updateLastMessage]);
 
   // Process user prompt (after auth check)
-  const processUserPrompt = async (userPrompt: string) => {
+  const processUserPrompt = useCallback(async (userPrompt: string) => {
     // PAYWALL CHECK: If user has 0 generations remaining (and not unlimited), show modal immediately
     if (generationsData && generationsData.remaining === 0) {
       console.log('[Paywall] User has 0 generations remaining, showing subscription modal');
@@ -1414,7 +1433,15 @@ export default function Home() {
       plannedScreensRef.current = [];
       await runGeneration({ prompt: userPrompt });
     }
-  };
+  }, [
+    generationsData,
+    handlePlanRefine,
+    hasStarted,
+    isLoading,
+    isRefiningPlan,
+    runGeneration,
+    setIsSubscriptionModalOpen
+  ]);
 
   // Effect to handle resumePrompt after OAuth redirect
   useEffect(() => {
@@ -1432,7 +1459,7 @@ export default function Home() {
         processUserPrompt(promptToProcess);
       }, 1000);
     }
-  }, [resumePrompt]);
+  }, [resumePrompt, processUserPrompt]);
 
   // Effect to handle resumeAfterSubscription after Stripe checkout success
   // We wait for hasActiveSubscription to be true before processing
@@ -1610,7 +1637,7 @@ export default function Home() {
         }, 1000);
       }
     }
-  }, [resumeAfterSubscription, hasActiveSubscription, resumeState, viewMode, handleExpand, handleShowCode, handleFocus, setNodes, setEdges]);
+  }, [resumeAfterSubscription, hasActiveSubscription, resumeState, viewMode, handleExpand, handleShowCode, handleFocus, setNodes, setEdges, runGeneration, processUserPrompt]);
 
   const handleClarificationSubmit = async (answers: ClarificationAnswer[]) => {
     const answer = answers[0];
@@ -1737,30 +1764,6 @@ export default function Home() {
       selectedDesignSystem: selectedDesignSystemRef.current,
       designSystemComplete: true
     }, true); // isDesignPhase = true
-  };
-
-  const handlePlanRefine = async (feedback: string) => {
-    const currentPlan = [...plannedScreensRef.current];
-
-    updateLastMessage(msg => ({
-      ...msg,
-      isPlanReady: false,
-      plannedScreens: null
-    }));
-
-    conversationHistoryRef.current.push({
-      type: 'plan_feedback',
-      feedback: feedback
-    });
-
-    setMessages(prev => [...prev, { role: 'user', content: `Changes requested: ${feedback}` }]);
-
-    await runGeneration({
-      prompt: currentPromptRef.current,
-      conversationHistory: conversationHistoryRef.current,
-      plannedScreens: currentPlan,
-      planFeedback: feedback
-    });
   };
 
   const handleReset = () => {
@@ -2598,7 +2601,6 @@ export default function Home() {
       <SubscriptionModal
         isOpen={isSubscriptionModalOpen}
         onClose={() => setIsSubscriptionModalOpen(false)}
-        generatedScreensCount={completedScreensCountRef.current}
       />
 
       <LoginModal

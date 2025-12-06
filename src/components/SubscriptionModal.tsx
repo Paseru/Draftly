@@ -9,7 +9,6 @@ import { PLAN_DETAILS } from '@/lib/stripePlans';
 interface SubscriptionModalProps {
     isOpen: boolean;
     onClose: () => void;
-    generatedScreensCount?: number;
 }
 
 // Icon mapping for plans
@@ -19,7 +18,7 @@ const planIcons = {
     enterprise: Crown,
 } as const;
 
-export default function SubscriptionModal({ isOpen, onClose, generatedScreensCount = 2 }: SubscriptionModalProps) {
+export default function SubscriptionModal({ isOpen, onClose }: SubscriptionModalProps) {
     const [loadingPlanId, setLoadingPlanId] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
 

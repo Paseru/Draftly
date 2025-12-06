@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { CheckCircle2, ChevronDown, ChevronRight, RefreshCcw, Layers } from 'lucide-react';
+import { ChevronDown, ChevronRight, RefreshCcw, Layers } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 
 interface PlannedScreen {

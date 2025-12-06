@@ -5,8 +5,9 @@ import { useQuery, useMutation } from 'convex/react';
 import { api } from '../../../convex/_generated/api';
 import { Id } from '../../../convex/_generated/dataModel';
 import { useConvexAuth } from 'convex/react';
-import { ArrowLeft, FolderOpen, Loader2, Trash2, Globe, Lock, Eye } from 'lucide-react';
+import { ArrowLeft, FolderOpen, Loader2, Trash2, Globe } from 'lucide-react';
 import Link from 'next/link';
+import Image from 'next/image';
 
 function getRelativeTime(timestamp: number): string {
     const now = Date.now();
@@ -29,13 +30,16 @@ export default function ProjectsPage() {
     const toggleVisibilityMutation = useMutation(api.projects.toggleProjectVisibility);
     const [deletingId, setDeletingId] = useState<string | null>(null);
 
-    const handleToggleVisibility = async (e: React.MouseEvent, project: any) => {
+    const handleToggleVisibility = async (
+        e: React.MouseEvent,
+        project: { _id: Id<"projects">; isPublic?: boolean }
+    ) => {
         e.preventDefault();
         e.stopPropagation();
         try {
             await toggleVisibilityMutation({
                 projectId: project._id,
-                isPublic: !project.isPublic
+                isPublic: !(project.isPublic ?? false)
             });
         } catch (error) {
             console.error('Failed to toggle visibility:', error);
@@ -132,10 +136,13 @@ export default function ProjectsPage() {
                                     {/* Preview */}
                                     <div className="relative w-full aspect-[16/10] bg-[#1a1a1a] overflow-hidden">
                                         {project.previewImage ? (
-                                            <img
+                                            <Image
                                                 src={project.previewImage}
                                                 alt={project.title}
-                                                className="w-full h-full object-cover object-top"
+                                                fill
+                                                unoptimized
+                                                className="object-cover object-top"
+                                                sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
                                             />
                                         ) : project.previewHtml ? (
                                             <div className="absolute inset-0 origin-top-left scale-[0.2] w-[500%] h-[500%]">
