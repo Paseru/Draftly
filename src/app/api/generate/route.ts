@@ -455,8 +455,7 @@ ${contextFlows}`;
 
               try {
                 const completionLLM = new ChatVertexAI({
-                  model: "gemini-2.0-flash-001",
-                  location: getLocation("gemini-2.0-flash-001"),
+                  ...buildVertexConfig("gemini-2.0-flash-001"),
                   temperature: 1,
                   maxOutputTokens: 1000,
                 });
