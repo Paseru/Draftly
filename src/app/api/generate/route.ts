@@ -439,8 +439,8 @@ ${contextFlows}`;
               try {
                 const completionLLM = new ChatGoogleGenerativeAI({
                   model: "gemini-2.0-flash",
-                  temperature: 0.7,
-                  maxOutputTokens: 256,
+                  temperature: 1,
+                  maxOutputTokens: 1000,
                 });
 
                 const completionPrompt = `You just finished designing a web application with these screens: ${screenNames}.

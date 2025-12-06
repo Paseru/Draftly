@@ -7,9 +7,9 @@
 
 // Price IDs for each plan (from Stripe Dashboard)
 export const STRIPE_PRICES = {
-    starter: "price_1SakG1EDqhY37sfcrsiqxI27",
-    pro: "price_1SakG2EDqhY37sfcJdh3AV2v",
-    enterprise: "price_1SakG3EDqhY37sfcP66RNx4a",
+    starter: "price_1Sb8t2CasKpI7xTZpTbHnCMU",
+    pro: "price_1Sb8t3CasKpI7xTZ6fC3fz1g",
+    enterprise: "price_1Sb8t3CasKpI7xTZ0UuEJiEH",
 } as const;
 
 // Valid price IDs for validation (used server-side)
