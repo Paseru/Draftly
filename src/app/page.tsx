@@ -605,7 +605,21 @@ export default function Home() {
 
       // Restore messages from project if available, otherwise create minimal state
       if (loadedProject.messages && loadedProject.messages.length > 0) {
-        setMessages(loadedProject.messages as Message[]);
+        const normalizedMessages = (loadedProject.messages as Message[]).map((msg) => {
+          if (msg.role !== 'assistant') return msg;
+
+          // If thinking state wasn't persisted (older projects), mark it complete
+          const isThinkingComplete = msg.isThinkingComplete ?? (!!msg.thinkingContent && !msg.isThinkingPaused);
+
+          return {
+            ...msg,
+            isThinkingComplete,
+            // Keep any existing duration, otherwise default to 0 to avoid "undefined"
+            thinkingDuration: msg.thinkingDuration ?? (isThinkingComplete ? 0 : undefined),
+          };
+        });
+
+        setMessages(normalizedMessages);
       } else {
         // Fallback for old projects without stored messages
         setMessages([
@@ -623,10 +637,18 @@ export default function Home() {
         ]);
       }
 
-      // Fit view after nodes are set
-      setTimeout(() => {
-        reactFlowInstance.current?.fitView({ duration: 800, padding: 0.15 });
-      }, 100);
+      // Fit view after nodes are set (retry until instance is ready)
+      const fitViewWithRetry = (attempt = 0) => {
+        const instance = reactFlowInstance.current;
+        if (instance) {
+          instance.updateNodeInternals?.(newNodes.map(n => n.id));
+          instance.fitView({ duration: 800, padding: 0.15 });
+        } else if (attempt < 5) {
+          setTimeout(() => fitViewWithRetry(attempt + 1), 120);
+        }
+      };
+
+      fitViewWithRetry();
 
       // Clear the loaded project ID to prevent re-triggering
       setLoadedProjectId(null);
@@ -1208,10 +1230,18 @@ export default function Home() {
                     role: m.role,
                     content: m.content,
                     thinkingContent: m.thinkingContent,
+                    isThinkingComplete: m.isThinkingComplete,
+                    isThinkingPaused: m.isThinkingPaused,
+                    thinkingDuration: m.thinkingDuration,
                     question: m.question,
+                    questionIndex: m.questionIndex,
                     submittedAnswer: m.submittedAnswer,
+                    isPlanReady: m.isPlanReady,
                     plannedScreens: m.plannedScreens ?? undefined,
                     isArchitectureApproved: m.isArchitectureApproved,
+                    isDesignSystemReady: m.isDesignSystemReady,
+                    designSystemOptions: m.designSystemOptions,
+                    submittedDesignSystem: m.submittedDesignSystem,
                     designSteps: m.designSteps?.map(s => ({
                       id: s.id,
                       label: s.label,
