@@ -1,5 +1,6 @@
 
 import { ChatVertexAI } from "@langchain/google-vertexai";
+import { buildVertexConfig } from "@/lib/vertex";
 
 export const runtime = 'nodejs';
 export const maxDuration = 300;
@@ -21,8 +22,7 @@ export async function POST(request: Request) {
     }
 
     const llm = new ChatVertexAI({
-      model: "gemini-3-pro-preview",
-      location: "global", // Gemini 3 models are served from the global endpoint
+      ...buildVertexConfig("gemini-3-pro-preview"),
       temperature: 0.2, // Lower temperature for more analytical output
     });
 

@@ -1,5 +1,6 @@
 import { appGeneratorGraph, ConversationTurn, ScreenFlow, DesignSystemOptions, DesignSystemSelection } from '@/ai/graph';
 import { ChatVertexAI } from "@langchain/google-vertexai";
+import { buildVertexConfig } from "@/lib/vertex";
 
 export const runtime = 'nodejs';
 export const maxDuration = 300;
@@ -22,10 +23,6 @@ interface RequestBody {
   resumeFromIndex?: number;
   referenceHtml?: string;
 }
-
-const defaultVertexLocation = process.env.VERTEXAI_LOCATION || "us-central1";
-const getLocation = (model: string) =>
-  model.startsWith("gemini-3") ? "global" : defaultVertexLocation;
 
 function sendSSE(controller: ReadableStreamDefaultController, event: string, data: unknown) {
   const payload = `data: ${JSON.stringify({ type: event, data })}\n\n`;
@@ -60,8 +57,7 @@ export async function POST(request: Request) {
 
   if (mode === 'chat') {
     const llm = new ChatVertexAI({
-      model: "gemini-3-pro-preview",
-      location: getLocation("gemini-3-pro-preview"),
+      ...buildVertexConfig("gemini-3-pro-preview"),
       temperature: 0.7,
     });
 
