@@ -436,17 +436,21 @@ IMPORTANT:
 
 // Node 1: Architecte (Thinking + Planning)
 async function architectNode(state: typeof AgentState.State) {
-  const { userRequest, enrichedRequest, planFeedback, plannedScreens: existingScreens, plannedFlows: existingFlows, designApproved } = state;
+  const { userRequest, enrichedRequest, planFeedback, plannedScreens: existingScreens, plannedFlows: existingFlows, designApproved, currentScreenIndex, generatedScreens } = state;
   const requestToUse = enrichedRequest || userRequest;
 
   const hasFeedback = planFeedback && planFeedback.trim().length > 0;
   const hasExistingPlan = existingScreens && existingScreens.length > 0;
 
+  // Resume mode: preserve currentScreenIndex if screens already generated
+  const isResumeMode = currentScreenIndex > 0 || (generatedScreens && generatedScreens.length > 0);
+
   if (designApproved && hasExistingPlan) {
     return {
       plannedScreens: existingScreens,
       plannedFlows: existingFlows || [],
-      currentScreenIndex: 0,
+      // CRITICAL: Preserve currentScreenIndex in resume mode to avoid regenerating first screen
+      currentScreenIndex: isResumeMode ? currentScreenIndex : 0,
     };
   }
 
@@ -553,7 +557,8 @@ This creates a proper tree visualization where each node has exactly one parent.
   return {
     plannedScreens,
     plannedFlows,
-    currentScreenIndex: 0,
+    // CRITICAL: Preserve currentScreenIndex in resume mode
+    currentScreenIndex: isResumeMode ? currentScreenIndex : 0,
   };
 }
 
@@ -917,8 +922,14 @@ function afterDesignSystem(state: typeof AgentState.State): "architect" | "__end
   return "__end__";
 }
 
-function afterArchitect(state: typeof AgentState.State): "designer" | "__end__" {
-  const { designApproved } = state;
+function afterArchitect(state: typeof AgentState.State): "designer" | "parallel_designer" | "__end__" {
+  const { designApproved, currentScreenIndex, generatedScreens } = state;
+
+  // Resume mode: If first screen already generated, skip designer and go to parallel_designer
+  if (currentScreenIndex > 0 || (generatedScreens && generatedScreens.length > 0)) {
+    console.log('[Graph] Resume mode detected - skipping to parallel_designer');
+    return "parallel_designer";
+  }
 
   if (designApproved) {
     return "designer";

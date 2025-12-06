@@ -89,7 +89,7 @@ export default function SubscriptionModal({ isOpen, onClose, generatedScreensCou
                             <h3 className="text-sm font-semibold text-white">Oh no, you&apos;ve run out of credits!</h3>
                         </div>
                         <p className="text-xs text-zinc-400">
-                            Your free trial is over. Subscribe now to continue creating your {generatedScreensCount}-screen app.
+                            Your free trial is over. Subscribe now to continue creating your design.
                         </p>
                     </div>
                     <button

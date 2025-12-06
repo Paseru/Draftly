@@ -43,10 +43,10 @@ export default function ProjectsPage() {
         }
     };
 
-    // Loading state
+    // Loading state - ensure dark background matches rest of app
     if (isAuthLoading || projects === undefined) {
         return (
-            <div className="h-screen w-full bg-[#1e1e1e] flex items-center justify-center font-mono">
+            <div className="h-screen w-full bg-[#1e1e1e] flex items-center justify-center font-mono" style={{ backgroundColor: '#1e1e1e' }}>
                 <Loader2 className="w-6 h-6 text-blue-400 animate-spin" />
             </div>
         );
@@ -117,7 +117,13 @@ export default function ProjectsPage() {
                                 >
                                     {/* Preview */}
                                     <div className="relative w-full aspect-[16/10] bg-[#1a1a1a] overflow-hidden">
-                                        {project.previewHtml ? (
+                                        {project.previewImage ? (
+                                            <img
+                                                src={project.previewImage}
+                                                alt={project.title}
+                                                className="w-full h-full object-cover object-top"
+                                            />
+                                        ) : project.previewHtml ? (
                                             <div className="absolute inset-0 origin-top-left scale-[0.2] w-[500%] h-[500%]">
                                                 <iframe
                                                     srcDoc={project.previewHtml}

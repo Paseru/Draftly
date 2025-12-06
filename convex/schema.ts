@@ -48,6 +48,23 @@ export default defineSchema({
             label: v.optional(v.string()),
         }))),
         previewHtml: v.optional(v.string()),
+        // Screenshot of first screen for preview (base64)
+        previewImage: v.optional(v.string()),
+        // Store sidebar conversation messages
+        messages: v.optional(v.array(v.object({
+            role: v.string(),
+            content: v.optional(v.string()),
+            thinkingContent: v.optional(v.string()),
+            question: v.optional(v.any()),
+            submittedAnswer: v.optional(v.any()),
+            plannedScreens: v.optional(v.array(v.any())),
+            isArchitectureApproved: v.optional(v.boolean()),
+            designSteps: v.optional(v.array(v.object({
+                id: v.string(),
+                label: v.string(),
+                status: v.string(),
+            }))),
+        }))),
         createdAt: v.number(),
         updatedAt: v.number(),
     })

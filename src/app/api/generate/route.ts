@@ -18,6 +18,9 @@ interface RequestBody {
   designSystemOptions?: DesignSystemOptions | null;
   selectedDesignSystem?: DesignSystemSelection | null;
   designSystemComplete?: boolean;
+  // Resume support
+  resumeFromIndex?: number;
+  referenceHtml?: string;
 }
 
 function sendSSE(controller: ReadableStreamDefaultController, event: string, data: unknown) {
@@ -40,7 +43,16 @@ export async function POST(request: Request) {
     designSystemOptions = null,
     selectedDesignSystem = null,
     designSystemComplete = false,
+    // Resume support
+    resumeFromIndex,
+    referenceHtml: providedReferenceHtml,
   } = body;
+
+  // Check if we're in resume mode (after Stripe subscription)
+  const isResumeMode = resumeFromIndex !== undefined && resumeFromIndex > 0;
+  if (isResumeMode) {
+    console.log('[API] Resume mode detected - skipping to parallel_designer, resumeFromIndex:', resumeFromIndex);
+  }
 
   if (mode === 'chat') {
     const llm = new ChatGoogleGenerativeAI({
@@ -107,25 +119,29 @@ ${contextFlows}`;
   const stream = new ReadableStream({
     async start(controller) {
       try {
+        // Determine referenceHtml - use provided one for resume, otherwise from first generated screen
+        const referenceHtml = providedReferenceHtml || (generatedScreens.length > 0 ? generatedScreens[0].html : '');
+
         const initialState = {
           userRequest: prompt,
           conversationHistory,
           plannedScreens,
           plannedFlows,
-          skipToPlanning,
-          designApproved,
+          skipToPlanning: isResumeMode ? true : skipToPlanning,
+          designApproved: isResumeMode ? true : designApproved,
           planFeedback,
           currentQuestion: null,
-          clarificationComplete: false,
-          enrichedRequest: '',
-          currentScreenIndex: 0,
-          referenceHtml: generatedScreens.length > 0 ? generatedScreens[0].html : '',
+          // In resume mode, skip clarification and design system phases entirely
+          clarificationComplete: isResumeMode ? true : false,
+          enrichedRequest: isResumeMode ? prompt : '',
+          currentScreenIndex: isResumeMode ? resumeFromIndex : 0,
+          referenceHtml,
           currentScreenHtml: '',
           generatedScreens,
           // Design System
           designSystemOptions,
           selectedDesignSystem,
-          designSystemComplete,
+          designSystemComplete: isResumeMode ? true : designSystemComplete,
         };
 
         let lastNode = '';
@@ -445,7 +461,7 @@ ${contextFlows}`;
 
                 const completionPrompt = `You just finished designing a web application with these screens: ${screenNames}.
 
-Write a SHORT, friendly completion message to let the user know their app is ready. Be enthusiastic but concise. Mention they can preview, view code, or export.`;
+Write a SHORT, friendly completion message to let the user know their app is ready. Be enthusiastic but concise. Mention they can preview, view code, or export. OUTPUT JUST THE MESSAGE NO COMMENT OR ANYTHING ELSE JUST THE MESSAGE FOR THE USER`;
 
                 const completionResponse = await completionLLM.invoke(completionPrompt);
                 sendSSE(controller, 'completion_message', completionResponse.content);

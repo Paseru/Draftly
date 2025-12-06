@@ -43,6 +43,7 @@ import { ConversationTurn, ScreenFlow } from '@/ai/graph';
 import { AnimatePresence, motion } from 'framer-motion';
 import AnimatedEdge from '@/components/AnimatedEdge';
 import { computeFlowLayout, getLayoutConfig } from '@/lib/layoutUtils';
+import html2canvas from 'html2canvas';
 
 interface PlannedScreen {
   id: string;
@@ -139,9 +140,14 @@ export default function Home() {
   const viewModeRef = useRef<'desktop' | 'mobile'>('desktop');
   const thinkingStartTimeRef = useRef<number>(0);
   const designSystemMarkdownRef = useRef<string | null>(null);
+  const designSystemGenerationStartedRef = useRef<boolean>(false);
   // Design System refs
   const designSystemOptionsRef = useRef<DesignSystemOptions | null>(null);
   const selectedDesignSystemRef = useRef<DesignSystemSelection | null>(null);
+  // Preview screenshot for project card
+  const previewImageRef = useRef<string | null>(null);
+  // Messages ref for access in SSE callbacks (avoids stale closure)
+  const messagesRef = useRef<Message[]>([]);
 
   // Stall detection: track last chunk timestamp per screen
   const lastChunkTimestampRef = useRef<Map<string, number>>(new Map());
@@ -207,6 +213,16 @@ export default function Home() {
 
   // State to trigger generation after Stripe subscription success
   const [resumeAfterSubscription, setResumeAfterSubscription] = useState<string | null>(null);
+  // State for complete resume state (includes screens already generated)
+  const [resumeState, setResumeState] = useState<{
+    prompt: string;
+    plannedScreens: PlannedScreen[];
+    plannedFlows: ScreenFlow[];
+    generatedScreens: Array<{ id: string; name: string; html: string }>;
+    selectedDesignSystem: DesignSystemSelection | null;
+    conversationHistory: ConversationTurn[];
+    currentScreenIndex: number;
+  } | null>(null);
   // Ref to track if we already processed Stripe return (prevents double trigger from OAuth effect)
   const stripeReturnProcessedRef = useRef(false);
 
@@ -230,26 +246,50 @@ export default function Home() {
         window.history.replaceState({}, '', window.location.pathname);
         console.log('[Stripe] Subscription successful!');
 
-        // Get and immediately clear the pending prompt from localStorage
-        // to prevent OAuth effect from also triggering
+        // Load complete generation state from localStorage
+        const savedStateJson = localStorage.getItem('pendingGenerationState');
         const savedPrompt = localStorage.getItem('pendingPrompt');
+
+        // Clear localStorage immediately to prevent OAuth effect from also triggering
+        localStorage.removeItem('pendingGenerationState');
         localStorage.removeItem('pendingPrompt');
         localStorage.removeItem('pendingPromptSource');
 
-        console.log('[Stripe] Checking for pending prompt:', savedPrompt);
-        if (savedPrompt) {
-          // Mark that we processed the Stripe return
+        if (savedStateJson) {
+          try {
+            const savedState = JSON.parse(savedStateJson);
+            console.log('[Stripe] Loaded complete generation state:', {
+              prompt: savedState.prompt?.substring(0, 50) + '...',
+              plannedScreensCount: savedState.plannedScreens?.length,
+              generatedScreensCount: savedState.generatedScreens?.length,
+              currentScreenIndex: savedState.currentScreenIndex,
+            });
+            // Mark that we processed the Stripe return
+            stripeReturnProcessedRef.current = true;
+            // Set complete resume state
+            setResumeState(savedState);
+            setResumeAfterSubscription(savedState.prompt);
+          } catch (e) {
+            console.error('[Stripe] Failed to parse saved generation state:', e);
+            // Fallback to just the prompt
+            if (savedPrompt) {
+              stripeReturnProcessedRef.current = true;
+              setResumeAfterSubscription(savedPrompt);
+            }
+          }
+        } else if (savedPrompt) {
+          console.log('[Stripe] No saved state found, falling back to prompt:', savedPrompt);
           stripeReturnProcessedRef.current = true;
-          // Set state to trigger the resume effect
           setResumeAfterSubscription(savedPrompt);
         }
       } else if (subscriptionStatus === 'canceled') {
         // User canceled checkout - remove the param AND clear pending prompt
         // This prevents the OAuth effect from restarting generation
         window.history.replaceState({}, '', window.location.pathname);
+        localStorage.removeItem('pendingGenerationState');
         localStorage.removeItem('pendingPrompt');
         localStorage.removeItem('pendingPromptSource');
-        console.log('[Stripe] Checkout canceled, cleared pendingPrompt');
+        console.log('[Stripe] Checkout canceled, cleared all pending state');
       }
     }
   }, []);
@@ -331,6 +371,64 @@ export default function Home() {
       }
     } catch (e) {
       console.error('Background design system generation failed:', e);
+    }
+  };
+
+  // Capture screenshot of HTML for project preview card
+  const captureScreenshot = async (html: string): Promise<string | null> => {
+    try {
+      // Create a temporary container
+      const container = document.createElement('div');
+      container.style.position = 'fixed';
+      container.style.left = '-9999px';
+      container.style.top = '0';
+      container.style.width = '1920px';
+      container.style.height = '1080px';
+      container.style.overflow = 'hidden';
+      container.style.zIndex = '-9999';
+      document.body.appendChild(container);
+
+      // Create iframe
+      const iframe = document.createElement('iframe');
+      iframe.style.width = '1920px';
+      iframe.style.height = '1080px';
+      iframe.style.border = 'none';
+      container.appendChild(iframe);
+
+      // Write HTML to iframe
+      const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document;
+      if (!iframeDoc) {
+        document.body.removeChild(container);
+        return null;
+      }
+      iframeDoc.open();
+      iframeDoc.write(html);
+      iframeDoc.close();
+
+      // Wait for iframe content to load
+      await new Promise(resolve => setTimeout(resolve, 500));
+
+      // Capture with html2canvas
+      const canvas = await html2canvas(iframeDoc.body, {
+        width: 1920,
+        height: 1080,
+        scale: 0.25, // Reduce size for storage
+        useCORS: true,
+        allowTaint: true,
+        logging: false,
+      });
+
+      // Convert to base64
+      const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
+
+      // Cleanup
+      document.body.removeChild(container);
+
+      console.log('[Screenshot] Captured preview image, size:', Math.round(dataUrl.length / 1024), 'KB');
+      return dataUrl;
+    } catch (e) {
+      console.error('[Screenshot] Failed to capture:', e);
+      return null;
     }
   };
 
@@ -489,13 +587,13 @@ export default function Home() {
         });
       }
 
-      // Create edges from flows
+      // Create edges from flows - label must be in data property for AnimatedEdge
       const newEdges: Edge[] = restoredFlows.map((flow, index) => ({
         id: `edge-${flow.from}-${flow.to}-${index}`,
         source: flow.from,
         target: flow.to,
         type: 'animatedEdge',
-        label: flow.label || undefined,
+        data: { label: flow.label || undefined },
         animated: false,
       }));
 
@@ -505,20 +603,25 @@ export default function Home() {
       setHasStarted(true);
       setIsSidebarOpen(true);
 
-      // Update messages - simple state without extra "project restored" text
-      setMessages([
-        { role: 'assistant', content: 'Hey ! How can i help you design your app today ?' },
-        { role: 'user', content: loadedProject.prompt },
-        {
-          role: 'assistant',
-          content: '',
-          designSteps: loadedProject.screens.map((s) => ({
-            id: `page-${s.id}`,
-            label: `Page ${s.name} generated`,
-            status: 'completed' as const,
-          })),
-        },
-      ]);
+      // Restore messages from project if available, otherwise create minimal state
+      if (loadedProject.messages && loadedProject.messages.length > 0) {
+        setMessages(loadedProject.messages as Message[]);
+      } else {
+        // Fallback for old projects without stored messages
+        setMessages([
+          { role: 'assistant', content: 'Hey ! How can i help you design your app today ?' },
+          { role: 'user', content: loadedProject.prompt },
+          {
+            role: 'assistant',
+            content: '',
+            designSteps: loadedProject.screens.map((s) => ({
+              id: `page-${s.id}`,
+              label: `Page ${s.name} generated`,
+              status: 'completed' as const,
+            })),
+          },
+        ]);
+      }
 
       // Fit view after nodes are set
       setTimeout(() => {
@@ -554,6 +657,11 @@ export default function Home() {
     if (chatContainerRef.current) {
       chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
     }
+  }, [messages]);
+
+  // Sync messagesRef with messages state for SSE callback access
+  useEffect(() => {
+    messagesRef.current = messages;
   }, [messages]);
 
   const handleStop = () => {
@@ -788,6 +896,22 @@ export default function Home() {
                   });
                 }
 
+                // Start design system generation early when first screen has enough HTML
+                const firstScreenId = plannedScreensRef.current[0]?.id;
+                if (
+                  screenId === firstScreenId &&
+                  !designSystemGenerationStartedRef.current &&
+                  !designSystemMarkdownRef.current
+                ) {
+                  const firstScreenHtml = generatedScreensRef.current.find(s => s.id === firstScreenId)?.html || '';
+                  // Start generating once we have at least 2000 characters (enough for meaningful design extraction)
+                  if (firstScreenHtml.length >= 2000) {
+                    console.log('[Design System] Starting background generation early, HTML length:', firstScreenHtml.length);
+                    designSystemGenerationStartedRef.current = true;
+                    generateDesignSystemInBackground(firstScreenHtml);
+                  }
+                }
+
                 setNodes(prev => {
                   const updated = prev.map(node => {
                     if (node.id === screenId) {
@@ -831,10 +955,20 @@ export default function Home() {
                     reactFlowInstance.current?.fitView({ duration: 1200, padding: 0.15 });
                   }, 500);
 
-                  // Generate design system in background for instant export
+                  // Capture screenshot for project preview card (design system is already generating from code_chunk handler)
                   const completedNode = generatedScreensRef.current.find(s => s.id === screenId);
                   if (completedNode?.html) {
-                    generateDesignSystemInBackground(completedNode.html);
+                    // If design system wasn't triggered during streaming, do it now as fallback
+                    if (!designSystemGenerationStartedRef.current && !designSystemMarkdownRef.current) {
+                      console.log('[Design System] Fallback generation on screen complete');
+                      designSystemGenerationStartedRef.current = true;
+                      generateDesignSystemInBackground(completedNode.html);
+                    }
+                    captureScreenshot(completedNode.html).then(img => {
+                      if (img) {
+                        previewImageRef.current = img;
+                      }
+                    });
                   }
                 }
 
@@ -900,15 +1034,26 @@ export default function Home() {
                   // Mark that user has used their free trial (persisted in Convex)
                   markFreeTrialUsed().catch(console.error);
 
-                  // Save prompt to localStorage before showing subscription modal
-                  // so it can be resumed after Stripe checkout
-                  if (currentPromptRef.current) {
-                    localStorage.setItem('pendingPrompt', currentPromptRef.current);
-                    // Mark that this prompt was saved by the paywall (Stripe flow)
-                    // This prevents OAuth effect from auto-resuming
-                    localStorage.setItem('pendingPromptSource', 'stripe');
-                    console.log('[Paywall] Saved prompt to localStorage:', currentPromptRef.current);
-                  }
+                  // Save COMPLETE generation state to localStorage for resume after Stripe checkout
+                  // This allows resuming from where we stopped instead of restarting from scratch
+                  const generationState = {
+                    prompt: currentPromptRef.current,
+                    plannedScreens: plannedScreensRef.current,
+                    plannedFlows: plannedFlowsRef.current,
+                    generatedScreens: generatedScreensRef.current,
+                    selectedDesignSystem: selectedDesignSystemRef.current,
+                    conversationHistory: conversationHistoryRef.current,
+                    currentScreenIndex: completedScreensCountRef.current,
+                  };
+                  localStorage.setItem('pendingGenerationState', JSON.stringify(generationState));
+                  localStorage.setItem('pendingPrompt', currentPromptRef.current);
+                  localStorage.setItem('pendingPromptSource', 'stripe');
+                  console.log('[Paywall] Saved complete generation state:', {
+                    prompt: generationState.prompt?.substring(0, 50) + '...',
+                    plannedScreensCount: generationState.plannedScreens?.length,
+                    generatedScreensCount: generationState.generatedScreens?.length,
+                    currentScreenIndex: generationState.currentScreenIndex,
+                  });
 
                   // Show subscription modal
                   setIsSubscriptionModalOpen(true);
@@ -1058,6 +1203,30 @@ export default function Home() {
                   // Create title from first 50 chars of prompt
                   const title = currentPromptRef.current.slice(0, 50) + (currentPromptRef.current.length > 50 ? '...' : '');
 
+                  // Get current messages from ref (avoids stale closure issue)
+                  const currentMessages = messagesRef.current.map(m => ({
+                    role: m.role,
+                    content: m.content,
+                    thinkingContent: m.thinkingContent,
+                    question: m.question,
+                    submittedAnswer: m.submittedAnswer,
+                    plannedScreens: m.plannedScreens ?? undefined,
+                    isArchitectureApproved: m.isArchitectureApproved,
+                    designSteps: m.designSteps?.map(s => ({
+                      id: s.id,
+                      label: s.label,
+                      status: s.status,
+                    })),
+                  }));
+
+                  // Debug logging
+                  console.log('[Project] Saving project with:', {
+                    screensCount: screens.length,
+                    flowsCount: plannedFlowsRef.current.length,
+                    messagesCount: currentMessages.length,
+                    hasPreviewImage: !!previewImageRef.current,
+                  });
+
                   createProject({
                     title,
                     prompt: currentPromptRef.current,
@@ -1071,6 +1240,8 @@ export default function Home() {
                       to: f.to,
                       label: f.label,
                     })),
+                    previewImage: previewImageRef.current || undefined,
+                    messages: currentMessages,
                   }).catch(err => console.error('[Project] Failed to save project:', err));
                 }
               }
@@ -1236,19 +1407,175 @@ export default function Home() {
     if (resumeAfterSubscription && hasActiveSubscription && !resumeProcessedRef.current) {
       console.log('[Stripe] Processing resumeAfterSubscription:', resumeAfterSubscription);
       resumeProcessedRef.current = true; // Guard against double execution
-      const promptToProcess = resumeAfterSubscription;
       setResumeAfterSubscription(null); // Clear it to prevent re-triggering
 
-      // Show the user's input in the homepage input field briefly
-      setInput(promptToProcess);
+      // Check if we have complete saved state to resume from
+      if (resumeState && resumeState.generatedScreens?.length > 0) {
+        console.log('[Stripe] Resuming with saved state - restoring workspace');
 
-      // Wait 1 second to show homepage with input, then start generation
-      setTimeout(() => {
-        setInput(''); // Clear input before transition
-        processUserPrompt(promptToProcess);
-      }, 1000);
+        // IMMEDIATELY show ReactFlow workspace to avoid landing page flash
+        setHasStarted(true);
+        setIsSidebarOpen(true);
+
+        // Restore all refs from saved state
+        currentPromptRef.current = resumeState.prompt;
+        plannedScreensRef.current = resumeState.plannedScreens || [];
+        plannedFlowsRef.current = resumeState.plannedFlows || [];
+        generatedScreensRef.current = resumeState.generatedScreens || [];
+        selectedDesignSystemRef.current = resumeState.selectedDesignSystem || null;
+        conversationHistoryRef.current = resumeState.conversationHistory || [];
+        completedScreensCountRef.current = resumeState.currentScreenIndex || 0;
+
+        // Create set of already-generated screen IDs for fast lookup
+        const generatedIds = new Set(resumeState.generatedScreens.map(s => s.id));
+
+        // Recreate ReactFlow nodes for already-generated screens
+        const config = getLayoutConfig(viewMode);
+        let newNodes: Node[];
+
+        if (resumeState.plannedFlows.length > 0 && plannedScreensRef.current.length > 0) {
+          // Use flow-based layout
+          const positions = computeFlowLayout(plannedScreensRef.current, resumeState.plannedFlows, config);
+          const positionMap = new Map(positions.map(p => [p.id, p]));
+
+          newNodes = plannedScreensRef.current.map((screen) => {
+            const pos = positionMap.get(screen.id);
+            const generated = resumeState.generatedScreens.find(g => g.id === screen.id);
+            const isAlreadyGenerated = generatedIds.has(screen.id);
+            return {
+              id: screen.id,
+              type: 'previewNode',
+              position: pos ? { x: pos.x, y: pos.y } : { x: 0, y: 0 },
+              data: {
+                label: screen.name,
+                html: generated?.html || '',
+                viewMode,
+                // CRITICAL: Only set isGenerating=true for screens NOT yet generated
+                isGenerating: !isAlreadyGenerated,
+                onExpand: handleExpand,
+                onShowCode: handleShowCode,
+                onFocus: handleFocus,
+              },
+            };
+          });
+        } else {
+          // Fallback to grid layout
+          const cols = viewMode === 'mobile' ? 4 : 2;
+          const w = config.nodeWidth;
+          const h = config.nodeHeight;
+          const gap = config.horizontalGap;
+
+          newNodes = plannedScreensRef.current.map((screen, index) => {
+            const col = index % cols;
+            const row = Math.floor(index / cols);
+            const generated = resumeState.generatedScreens.find(g => g.id === screen.id);
+            const isAlreadyGenerated = generatedIds.has(screen.id);
+
+            return {
+              id: screen.id,
+              type: 'previewNode',
+              position: { x: col * (w + gap), y: row * (h + gap) },
+              data: {
+                label: screen.name,
+                html: generated?.html || '',
+                viewMode,
+                isGenerating: !isAlreadyGenerated,
+                onExpand: handleExpand,
+                onShowCode: handleShowCode,
+                onFocus: handleFocus,
+              },
+            };
+          });
+        }
+
+        // Create edges from flows
+        const newEdges: Edge[] = resumeState.plannedFlows.map((flow, index) => ({
+          id: `edge-${flow.from}-${flow.to}-${index}`,
+          source: flow.from,
+          target: flow.to,
+          type: 'animatedEdge',
+          data: { label: flow.label || undefined },
+          animated: false,
+        }));
+
+        // Set nodes and edges
+        setNodes(newNodes);
+        setEdges(newEdges);
+
+        // Create design steps for UI showing progress
+        const designSteps: Step[] = [
+          { id: 'design-system', label: 'Design System Generated', status: 'completed' },
+          ...resumeState.generatedScreens.map((s) => ({
+            id: `page-${s.id}`,
+            label: `Page ${s.name} generated`,
+            status: 'completed' as const,
+          })),
+          ...plannedScreensRef.current
+            .filter(s => !resumeState.generatedScreens.find(g => g.id === s.id))
+            .map(s => ({
+              id: `page-${s.id}`,
+              label: `Generating ${s.name}`,
+              status: 'running' as const,
+            })),
+        ];
+
+        // Update messages
+        setMessages([
+          { role: 'assistant', content: 'Hey ! How can i help you design your app today ?' },
+          { role: 'user', content: resumeState.prompt },
+          {
+            role: 'assistant',
+            content: '',
+            designSteps,
+          },
+        ]);
+
+        // Fit view after nodes are set
+        setTimeout(() => {
+          reactFlowInstance.current?.fitView({ duration: 800, padding: 0.15 });
+        }, 100);
+
+        // Clear resume state
+        setResumeState(null);
+
+        // Get reference HTML from first generated screen
+        const referenceHtml = resumeState.generatedScreens[0]?.html || '';
+
+        // Actually resume generation - call runGeneration with resume context
+        const remainingScreens = plannedScreensRef.current.filter(s => !generatedIds.has(s.id));
+
+        if (remainingScreens.length > 0) {
+          console.log('[Stripe] Resuming generation of', remainingScreens.length, 'remaining screens');
+
+          // Run generation with resume context
+          runGeneration({
+            prompt: resumeState.prompt,
+            conversationHistory: resumeState.conversationHistory,
+            plannedScreens: plannedScreensRef.current,
+            selectedDesignSystem: resumeState.selectedDesignSystem,
+            // Resume flags
+            resumeFromIndex: resumeState.currentScreenIndex,
+            referenceHtml,
+          }, true); // isDesignPhase = true to not create new message
+        } else {
+          console.log('[Stripe] All screens already generated, nothing to resume');
+        }
+      } else {
+        // No saved state - fall back to restarting from scratch
+        console.log('[Stripe] No saved state, restarting generation from scratch');
+        const promptToProcess = resumeAfterSubscription;
+
+        // Show the user's input in the homepage input field briefly
+        setInput(promptToProcess);
+
+        // Wait 1 second to show homepage with input, then start generation
+        setTimeout(() => {
+          setInput(''); // Clear input before transition
+          processUserPrompt(promptToProcess);
+        }, 1000);
+      }
     }
-  }, [resumeAfterSubscription, hasActiveSubscription]);
+  }, [resumeAfterSubscription, hasActiveSubscription, resumeState, viewMode, handleExpand, handleShowCode, handleFocus, setNodes, setEdges]);
 
   const handleClarificationSubmit = async (answers: ClarificationAnswer[]) => {
     const answer = answers[0];
@@ -1417,9 +1744,12 @@ export default function Home() {
     conversationHistoryRef.current = [];
     currentPromptRef.current = '';
     designSystemMarkdownRef.current = null;
+    designSystemGenerationStartedRef.current = false;
     designSystemOptionsRef.current = null;
     selectedDesignSystemRef.current = null;
     completedScreensCountRef.current = 0;
+    previewImageRef.current = null;
+    messagesRef.current = [];
     setIsResetModalOpen(false);
     setIsSidebarOpen(true);
     setInput('');

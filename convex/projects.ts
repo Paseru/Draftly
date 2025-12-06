@@ -17,6 +17,21 @@ export const createProject = mutation({
             to: v.string(),
             label: v.optional(v.string()),
         }))),
+        previewImage: v.optional(v.string()),
+        messages: v.optional(v.array(v.object({
+            role: v.string(),
+            content: v.optional(v.string()),
+            thinkingContent: v.optional(v.string()),
+            question: v.optional(v.any()),
+            submittedAnswer: v.optional(v.any()),
+            plannedScreens: v.optional(v.array(v.any())),
+            isArchitectureApproved: v.optional(v.boolean()),
+            designSteps: v.optional(v.array(v.object({
+                id: v.string(),
+                label: v.string(),
+                status: v.string(),
+            }))),
+        }))),
     },
     handler: async (ctx, args) => {
         const userId = await getAuthUserId(ctx);
@@ -34,6 +49,8 @@ export const createProject = mutation({
             screens: args.screens,
             flows: args.flows,
             previewHtml,
+            previewImage: args.previewImage,
+            messages: args.messages,
             createdAt: now,
             updatedAt: now,
         });
@@ -41,6 +58,7 @@ export const createProject = mutation({
         return { projectId };
     },
 });
+
 
 // Get all projects for the current user
 export const getUserProjects = query({
