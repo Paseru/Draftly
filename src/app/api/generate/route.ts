@@ -1,5 +1,5 @@
 import { appGeneratorGraph, ConversationTurn, ScreenFlow, DesignSystemOptions, DesignSystemSelection } from '@/ai/graph';
-import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
+import { ChatVertexAI } from "@langchain/google-vertexai";
 
 export const runtime = 'nodejs';
 export const maxDuration = 300;
@@ -22,6 +22,11 @@ interface RequestBody {
   resumeFromIndex?: number;
   referenceHtml?: string;
 }
+
+const vertexProject = process.env.VERTEXAI_PROJECT || process.env.GOOGLE_CLOUD_PROJECT;
+const defaultVertexLocation = process.env.VERTEXAI_LOCATION || "us-central1";
+const getLocation = (model: string) =>
+  model.startsWith("gemini-3") ? "global" : defaultVertexLocation;
 
 function sendSSE(controller: ReadableStreamDefaultController, event: string, data: unknown) {
   const payload = `data: ${JSON.stringify({ type: event, data })}\n\n`;
@@ -55,8 +60,10 @@ export async function POST(request: Request) {
   }
 
   if (mode === 'chat') {
-    const llm = new ChatGoogleGenerativeAI({
+    const llm = new ChatVertexAI({
       model: "gemini-3-pro-preview",
+      project: vertexProject,
+      location: getLocation("gemini-3-pro-preview"),
       temperature: 0.7,
     });
 
@@ -453,8 +460,10 @@ ${contextFlows}`;
               const screenNames = allScreens.map(s => s.name).join(', ');
 
               try {
-                const completionLLM = new ChatGoogleGenerativeAI({
-                  model: "gemini-2.0-flash",
+                const completionLLM = new ChatVertexAI({
+                  model: "gemini-2.0-flash-001",
+                  project: vertexProject,
+                  location: getLocation("gemini-2.0-flash-001"),
                   temperature: 1,
                   maxOutputTokens: 1000,
                 });

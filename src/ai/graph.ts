@@ -1,4 +1,4 @@
-import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
+import { ChatVertexAI } from "@langchain/google-vertexai";
 import { StateGraph, START, Annotation } from "@langchain/langgraph";
 
 // --- Types ---
@@ -122,16 +122,26 @@ export const AgentState = Annotation.Root({
 
 // --- Models ---
 
-const llm = new ChatGoogleGenerativeAI({
+// Gemini 3 is only available on the global endpoint; fall back to the configured region for other models.
+const defaultVertexLocation = process.env.VERTEXAI_LOCATION || "us-central1";
+const vertexProject = process.env.VERTEXAI_PROJECT || process.env.GOOGLE_CLOUD_PROJECT;
+const getLocation = (model: string) =>
+  model.startsWith("gemini-3") ? "global" : defaultVertexLocation;
+
+const llm = new ChatVertexAI({
   model: "gemini-3-pro-preview",
+  project: vertexProject,
+  location: getLocation("gemini-3-pro-preview"),
   temperature: 1.0,
   maxOutputTokens: 65536,
 });
 
 // Create a tagged LLM instance for parallel screen generation
 function createScreenLLM(screenId: string) {
-  return new ChatGoogleGenerativeAI({
+  return new ChatVertexAI({
     model: "gemini-3-pro-preview",
+    project: vertexProject,
+    location: getLocation("gemini-3-pro-preview"),
     temperature: 1.0,
     maxOutputTokens: 65536,
   }).withConfig({ tags: [`screen:${screenId}`] });

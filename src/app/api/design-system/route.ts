@@ -1,5 +1,5 @@
 
-import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
+import { ChatVertexAI } from "@langchain/google-vertexai";
 
 export const runtime = 'nodejs';
 export const maxDuration = 300;
@@ -20,8 +20,10 @@ export async function POST(request: Request) {
       });
     }
 
-    const llm = new ChatGoogleGenerativeAI({
+    const llm = new ChatVertexAI({
       model: "gemini-3-pro-preview",
+      project: process.env.VERTEXAI_PROJECT || process.env.GOOGLE_CLOUD_PROJECT,
+      location: "global", // Gemini 3 models are served from the global endpoint
       temperature: 0.2, // Lower temperature for more analytical output
     });
 

@@ -33,6 +33,9 @@ yarn-error.log*
 # env files (can opt-in for committing if needed)
 .env*
 
+# generated service account keys (should stay local)
+gen-lang-client-*.json
+
 # vercel
 .vercel
 
