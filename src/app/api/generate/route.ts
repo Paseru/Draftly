@@ -23,7 +23,6 @@ interface RequestBody {
   referenceHtml?: string;
 }
 
-const vertexProject = process.env.VERTEXAI_PROJECT || process.env.GOOGLE_CLOUD_PROJECT;
 const defaultVertexLocation = process.env.VERTEXAI_LOCATION || "us-central1";
 const getLocation = (model: string) =>
   model.startsWith("gemini-3") ? "global" : defaultVertexLocation;
@@ -62,7 +61,6 @@ export async function POST(request: Request) {
   if (mode === 'chat') {
     const llm = new ChatVertexAI({
       model: "gemini-3-pro-preview",
-      project: vertexProject,
       location: getLocation("gemini-3-pro-preview"),
       temperature: 0.7,
     });
@@ -462,7 +460,6 @@ ${contextFlows}`;
               try {
                 const completionLLM = new ChatVertexAI({
                   model: "gemini-2.0-flash-001",
-                  project: vertexProject,
                   location: getLocation("gemini-2.0-flash-001"),
                   temperature: 1,
                   maxOutputTokens: 1000,

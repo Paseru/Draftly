@@ -41,6 +41,8 @@ export default defineSchema({
             name: v.string(),
             html: v.string(),
         })),
+        // Public visibility toggle
+        isPublic: v.optional(v.boolean()),
         // Store flows for edge restoration
         flows: v.optional(v.array(v.object({
             from: v.string(),
@@ -67,6 +69,7 @@ export default defineSchema({
             isDesignSystemReady: v.optional(v.boolean()),
             designSystemOptions: v.optional(v.any()),
             submittedDesignSystem: v.optional(v.any()),
+            completionMessage: v.optional(v.string()),
             designSteps: v.optional(v.array(v.object({
                 id: v.string(),
                 label: v.string(),
@@ -77,5 +80,6 @@ export default defineSchema({
         updatedAt: v.number(),
     })
         .index("by_user", ["userId"])
-        .index("by_created", ["userId", "createdAt"]),
+        .index("by_created", ["userId", "createdAt"])
+        .index("by_public", ["isPublic", "createdAt"]),
 });

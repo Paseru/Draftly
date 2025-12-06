@@ -124,13 +124,11 @@ export const AgentState = Annotation.Root({
 
 // Gemini 3 is only available on the global endpoint; fall back to the configured region for other models.
 const defaultVertexLocation = process.env.VERTEXAI_LOCATION || "us-central1";
-const vertexProject = process.env.VERTEXAI_PROJECT || process.env.GOOGLE_CLOUD_PROJECT;
 const getLocation = (model: string) =>
   model.startsWith("gemini-3") ? "global" : defaultVertexLocation;
 
 const llm = new ChatVertexAI({
   model: "gemini-3-pro-preview",
-  project: vertexProject,
   location: getLocation("gemini-3-pro-preview"),
   temperature: 1.0,
   maxOutputTokens: 65536,
@@ -140,7 +138,6 @@ const llm = new ChatVertexAI({
 function createScreenLLM(screenId: string) {
   return new ChatVertexAI({
     model: "gemini-3-pro-preview",
-    project: vertexProject,
     location: getLocation("gemini-3-pro-preview"),
     temperature: 1.0,
     maxOutputTokens: 65536,

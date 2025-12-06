@@ -34,6 +34,7 @@ export const createProject = mutation({
             isDesignSystemReady: v.optional(v.boolean()),
             designSystemOptions: v.optional(v.any()),
             submittedDesignSystem: v.optional(v.any()),
+            completionMessage: v.optional(v.string()),
             designSteps: v.optional(v.array(v.object({
                 id: v.string(),
                 label: v.string(),
@@ -56,6 +57,7 @@ export const createProject = mutation({
             prompt: args.prompt,
             screens: args.screens,
             flows: args.flows,
+            isPublic: true, // Default to public as requested
             previewHtml,
             previewImage: args.previewImage,
             messages: args.messages,
@@ -130,5 +132,60 @@ export const deleteProject = mutation({
         await ctx.db.delete(args.projectId);
 
         return { success: true };
+    },
+});
+
+// Toggle project visibility
+export const toggleProjectVisibility = mutation({
+    args: {
+        projectId: v.id("projects"),
+        isPublic: v.boolean(),
+    },
+    handler: async (ctx, args) => {
+        const userId = await getAuthUserId(ctx);
+        if (!userId) {
+            throw new Error("Not authenticated");
+        }
+
+        const project = await ctx.db.get(args.projectId);
+
+        if (!project || project.userId !== userId) {
+            throw new Error("Project not found or access denied");
+        }
+
+        await ctx.db.patch(args.projectId, {
+            isPublic: args.isPublic,
+        });
+
+        return { success: true };
+    },
+});
+
+// Get public projects (showcase)
+export const getPublicProjects = query({
+    args: {
+        limit: v.optional(v.number()),
+    },
+    handler: async (ctx, args) => {
+        const limit = args.limit || 20;
+
+        const projects = await ctx.db
+            .query("projects")
+            .withIndex("by_public", (q) => q.eq("isPublic", true))
+            .order("desc")
+            .take(limit);
+
+        // Enhance projects with user details
+        const enhancedProjects = await Promise.all(
+            projects.map(async (project) => {
+                const user = await ctx.db.get(project.userId);
+                return {
+                    ...project,
+                    authorName: user?.name?.split(" ")[0] || "Anonymous", // First name only
+                };
+            })
+        );
+
+        return enhancedProjects;
     },
 });

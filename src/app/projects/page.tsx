@@ -5,7 +5,7 @@ import { useQuery, useMutation } from 'convex/react';
 import { api } from '../../../convex/_generated/api';
 import { Id } from '../../../convex/_generated/dataModel';
 import { useConvexAuth } from 'convex/react';
-import { ArrowLeft, FolderOpen, Loader2, Trash2 } from 'lucide-react';
+import { ArrowLeft, FolderOpen, Loader2, Trash2, Globe, Lock, Eye } from 'lucide-react';
 import Link from 'next/link';
 
 function getRelativeTime(timestamp: number): string {
@@ -26,7 +26,21 @@ export default function ProjectsPage() {
     const { isAuthenticated, isLoading: isAuthLoading } = useConvexAuth();
     const projects = useQuery(api.projects.getUserProjects);
     const deleteProjectMutation = useMutation(api.projects.deleteProject);
+    const toggleVisibilityMutation = useMutation(api.projects.toggleProjectVisibility);
     const [deletingId, setDeletingId] = useState<string | null>(null);
+
+    const handleToggleVisibility = async (e: React.MouseEvent, project: any) => {
+        e.preventDefault();
+        e.stopPropagation();
+        try {
+            await toggleVisibilityMutation({
+                projectId: project._id,
+                isPublic: !project.isPublic
+            });
+        } catch (error) {
+            console.error('Failed to toggle visibility:', error);
+        }
+    };
 
     const handleDelete = async (e: React.MouseEvent, id: string) => {
         e.preventDefault();
@@ -145,23 +159,44 @@ export default function ProjectsPage() {
                                     </div>
 
                                     {/* Card content */}
-                                    <div className="p-3 flex items-start justify-between gap-2">
-                                        <div className="flex-1 min-w-0">
-                                            <h3 className="text-xs font-medium text-zinc-100 truncate">
-                                                {project.title}
-                                            </h3>
-                                            <p className="text-[10px] text-zinc-500 mt-0.5">
-                                                {getRelativeTime(project.createdAt)}
-                                            </p>
+                                    <div className="p-3">
+                                        <div className="flex items-start justify-between gap-2">
+                                            <div className="flex-1 min-w-0">
+                                                <h3 className="text-xs font-medium text-zinc-100 truncate">
+                                                    {project.title}
+                                                </h3>
+                                                <p className="text-[10px] text-zinc-500 mt-0.5">
+                                                    {getRelativeTime(project.createdAt)}
+                                                </p>
+                                            </div>
+
+                                            <button
+                                                onClick={(e) => handleDelete(e, project._id)}
+                                                className="p-1.5 text-zinc-500 hover:text-red-400 hover:bg-red-500/10 rounded-md transition-colors opacity-0 group-hover:opacity-100 cursor-pointer"
+                                                title="Delete project"
+                                            >
+                                                <Trash2 className="w-3.5 h-3.5" />
+                                            </button>
                                         </div>
 
-                                        <button
-                                            onClick={(e) => handleDelete(e, project._id)}
-                                            className="p-1.5 text-zinc-500 hover:text-red-400 hover:bg-red-500/10 rounded-md transition-colors opacity-0 group-hover:opacity-100 cursor-pointer"
-                                            title="Delete project"
+                                        {/* Showcase toggle */}
+                                        <div
+                                            className="mt-3 pt-3 border-t border-[#3e3e42] flex items-center justify-between"
+                                            onClick={(e) => e.preventDefault()}
                                         >
-                                            <Trash2 className="w-3.5 h-3.5" />
-                                        </button>
+                                            <div className="flex items-center gap-2">
+                                                <Globe className="w-3 h-3 text-zinc-500" />
+                                                <span className="text-[10px] text-zinc-400">Show in Showcase</span>
+                                            </div>
+                                            <button
+                                                onClick={(e) => handleToggleVisibility(e, project)}
+                                                className={`relative w-8 h-4 rounded-full transition-colors cursor-pointer ${project.isPublic ? 'bg-blue-500' : 'bg-zinc-700'
+                                                    }`}
+                                            >
+                                                <div className={`absolute top-0.5 w-3 h-3 bg-white rounded-full shadow transition-transform ${project.isPublic ? 'translate-x-4.5' : 'translate-x-0.5'
+                                                    }`} />
+                                            </button>
+                                        </div>
                                     </div>
                                 </Link>
                             ))}
