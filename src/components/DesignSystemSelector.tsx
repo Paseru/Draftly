@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ChevronRight, ChevronDown, CheckCircle2, Type, Palette } from 'lucide-react';
+import { ChevronRight, ChevronDown, CheckCircle2, Type, Sparkles } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 export interface FontOption {
@@ -10,27 +10,22 @@ export interface FontOption {
   reason: string;
 }
 
-export interface ColorPalette {
+export interface VibeOption {
   id: string;
   name: string;
-  colors: {
-    primary: string;
-    secondary: string;
-    accent: string;
-    background: string;
-    text: string;
-  };
-  reason: string;
+  description: string;
+  keywords: string[];
+  emoji: string;
 }
 
 export interface DesignSystemOptions {
   fonts: FontOption[];
-  palettes: ColorPalette[];
+  vibes: VibeOption[];
 }
 
 export interface DesignSystemSelection {
   font: FontOption;
-  palette: ColorPalette;
+  vibe: VibeOption;
 }
 
 interface Props {
@@ -41,7 +36,7 @@ interface Props {
 
 export default function DesignSystemSelector({ options, onSubmit, submittedSelection }: Props) {
   const [selectedFont, setSelectedFont] = useState<FontOption | null>(submittedSelection?.font || null);
-  const [selectedPalette, setSelectedPalette] = useState<ColorPalette | null>(submittedSelection?.palette || null);
+  const [selectedVibe, setSelectedVibe] = useState<VibeOption | null>(submittedSelection?.vibe || null);
   const [isExpanded, setIsExpanded] = useState(!submittedSelection);
 
   const isSubmitted = !!submittedSelection;
@@ -81,11 +76,11 @@ export default function DesignSystemSelector({ options, onSubmit, submittedSelec
 
 
   const handleSubmit = () => {
-    if (!onSubmit || !selectedFont || !selectedPalette) return;
-    onSubmit({ font: selectedFont, palette: selectedPalette });
+    if (!onSubmit || !selectedFont || !selectedVibe) return;
+    onSubmit({ font: selectedFont, vibe: selectedVibe });
   };
 
-  const canSubmit = selectedFont && selectedPalette;
+  const canSubmit = selectedFont && selectedVibe;
 
   return (
     <div className="w-full max-w-xl bg-[#1e1e1e] border border-[#27272a] rounded-xl overflow-hidden transition-all duration-200">
@@ -95,7 +90,7 @@ export default function DesignSystemSelector({ options, onSubmit, submittedSelec
       >
         <div className="flex items-center gap-2">
           {isSubmitted ? (
-            <Palette size={14} className="text-orange-500" />
+            <Sparkles size={14} className="text-orange-500" />
           ) : (
             <div className="w-1.5 h-1.5 rounded-full bg-orange-500 animate-pulse" />
           )}
@@ -167,23 +162,23 @@ export default function DesignSystemSelector({ options, onSubmit, submittedSelec
             </div>
           </div>
 
-          {/* Color Palette Selection */}
+          {/* Vibe Selection */}
           <div className="space-y-2">
             <div className="flex items-center gap-2 text-zinc-400">
-              <Palette size={12} />
-              <span className="text-[10px] font-medium uppercase tracking-wider">Color Palette</span>
+              <Sparkles size={12} />
+              <span className="text-[10px] font-medium uppercase tracking-wider">Design Vibe</span>
             </div>
 
             <div className="grid grid-cols-1 gap-1.5">
-              {options.palettes.map((palette) => {
-                const isSelected = selectedPalette?.id === palette.id;
+              {options.vibes.map((vibe) => {
+                const isSelected = selectedVibe?.id === vibe.id;
                 return (
                   <button
-                    key={palette.id}
-                    onClick={() => !isSubmitted && setSelectedPalette(palette)}
+                    key={vibe.id}
+                    onClick={() => !isSubmitted && setSelectedVibe(vibe)}
                     disabled={isSubmitted}
                     className={cn(
-                      "w-full px-3 py-2 rounded-lg text-left transition-all duration-200 border group",
+                      "w-full px-3 py-2.5 rounded-lg text-left transition-all duration-200 border group",
                       isSelected
                         ? "bg-blue-500/10 border-blue-500/30"
                         : "bg-[#202023] border-[#27272a]",
@@ -191,47 +186,24 @@ export default function DesignSystemSelector({ options, onSubmit, submittedSelec
                       isSubmitted ? "cursor-default" : "cursor-pointer"
                     )}
                   >
-                    <div className="flex items-center justify-between">
-                      <div className="space-y-1.5 pb-0.5">
-                        <div className={cn(
-                          "text-[12px] font-medium transition-colors",
-                          isSelected ? "text-blue-300" : "text-zinc-200 group-hover:text-white"
-                        )}>
-                          {palette.name}
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex-1 space-y-1">
+                        <div className="flex items-center gap-2">
+                          <span className="text-base">{vibe.emoji}</span>
+                          <span className={cn(
+                            "text-[12px] font-medium transition-colors",
+                            isSelected ? "text-blue-300" : "text-zinc-200 group-hover:text-white"
+                          )}>
+                            {vibe.name}
+                          </span>
                         </div>
-
-                        {/* Color swatches */}
-                        <div className="flex items-center gap-1">
-                          <div
-                            className="w-7 h-7 rounded-md ring-1 ring-white/10 shadow-inner"
-                            style={{ backgroundColor: palette.colors.primary }}
-                            title="Primary"
-                          />
-                          <div
-                            className="w-7 h-7 rounded-md ring-1 ring-white/10 shadow-inner"
-                            style={{ backgroundColor: palette.colors.secondary }}
-                            title="Secondary"
-                          />
-                          <div
-                            className="w-7 h-7 rounded-md ring-1 ring-white/10 shadow-inner"
-                            style={{ backgroundColor: palette.colors.accent }}
-                            title="Accent"
-                          />
-                          <div
-                            className="w-7 h-7 rounded-md ring-1 ring-white/10 shadow-inner"
-                            style={{ backgroundColor: palette.colors.background }}
-                            title="Background"
-                          />
-                          <div
-                            className="w-7 h-7 rounded-md ring-1 ring-white/10 shadow-inner"
-                            style={{ backgroundColor: palette.colors.text }}
-                            title="Text"
-                          />
+                        <div className="text-[10px] text-zinc-500 leading-relaxed">
+                          {vibe.description}
                         </div>
                       </div>
 
                       {isSelected && (
-                        <CheckCircle2 size={14} className="text-blue-400" />
+                        <CheckCircle2 size={14} className="text-blue-400 flex-shrink-0 mt-0.5" />
                       )}
                     </div>
                   </button>
@@ -240,34 +212,38 @@ export default function DesignSystemSelector({ options, onSubmit, submittedSelec
 
               {/* Auto option - Let Draftly choose (last) */}
               <button
-                onClick={() => !isSubmitted && setSelectedPalette({
+                onClick={() => !isSubmitted && setSelectedVibe({
                   id: 'auto',
-                  name: 'Auto',
-                  colors: { primary: '', secondary: '', accent: '', background: '', text: '' },
-                  reason: 'Let AI choose the best colors'
+                  name: 'Let Draftly choose',
+                  description: 'AI will pick the perfect vibe for your project',
+                  keywords: [],
+                  emoji: '✨'
                 })}
                 disabled={isSubmitted}
                 className={cn(
-                  "w-full px-3 py-2 rounded-lg text-left transition-all duration-200 border group",
-                  selectedPalette?.id === 'auto'
+                  "w-full px-3 py-2.5 rounded-lg text-left transition-all duration-200 border group",
+                  selectedVibe?.id === 'auto'
                     ? "bg-blue-500/10 border-blue-500/30"
                     : "bg-[#202023] border-[#27272a]",
-                  !isSubmitted && selectedPalette?.id !== 'auto' && "hover:bg-[#27272a] hover:border-zinc-600",
+                  !isSubmitted && selectedVibe?.id !== 'auto' && "hover:bg-[#27272a] hover:border-zinc-600",
                   isSubmitted ? "cursor-default" : "cursor-pointer"
                 )}
               >
-                <div className="flex items-center justify-between">
-                  <div className="space-y-1.5 pb-0.5">
-                    <div className={cn(
-                      "text-[12px] font-medium transition-colors",
-                      selectedPalette?.id === 'auto' ? "text-blue-300" : "text-zinc-200 group-hover:text-white"
-                    )}>
-                      Let Draftly choose
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex-1 space-y-1">
+                    <div className="flex items-center gap-2">
+                      <span className="text-base">✨</span>
+                      <span className={cn(
+                        "text-[12px] font-medium transition-colors",
+                        selectedVibe?.id === 'auto' ? "text-blue-300" : "text-zinc-200 group-hover:text-white"
+                      )}>
+                        Let Draftly choose
+                      </span>
                     </div>
                     <div className="text-[10px] text-zinc-500">Recommended for best results</div>
                   </div>
-                  {selectedPalette?.id === 'auto' && (
-                    <CheckCircle2 size={14} className="text-blue-400" />
+                  {selectedVibe?.id === 'auto' && (
+                    <CheckCircle2 size={14} className="text-blue-400 flex-shrink-0 mt-0.5" />
                   )}
                 </div>
               </button>

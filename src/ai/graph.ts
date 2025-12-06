@@ -31,27 +31,22 @@ export interface FontOption {
   reason: string;
 }
 
-export interface ColorPalette {
+export interface VibeOption {
   id: string;
-  name: string;
-  colors: {
-    primary: string;
-    secondary: string;
-    accent: string;
-    background: string;
-    text: string;
-  };
-  reason: string;
+  name: string;           // e.g., "Corporate & Professional"
+  description: string;    // e.g., "Clean lines, trustworthy feel, executive aesthetic"
+  keywords: string[];     // e.g., ["minimal", "corporate", "trustworthy"]
+  emoji: string;          // e.g., "🎯"
 }
 
 export interface DesignSystemOptions {
   fonts: FontOption[];
-  palettes: ColorPalette[];
+  vibes: VibeOption[];
 }
 
 export interface DesignSystemSelection {
   font: FontOption;
-  palette: ColorPalette;
+  vibe: VibeOption;
 }
 
 // --- State ---
@@ -162,7 +157,7 @@ async function invokeLLM(prompt: string): Promise<string> {
 // Node 0: Clarifier (Conversational - one question at a time)
 async function clarifierNode(state: typeof AgentState.State) {
   const { userRequest, conversationHistory, skipToPlanning, planFeedback, enrichedRequest, designApproved, designSystemComplete } = state;
-  
+
   // Skip clarification if design system is already complete (user selected font/colors)
   if (designSystemComplete) {
     return {
@@ -171,7 +166,7 @@ async function clarifierNode(state: typeof AgentState.State) {
       enrichedRequest: enrichedRequest || userRequest,
     };
   }
-  
+
   if (designApproved) {
     return {
       clarificationComplete: true,
@@ -179,7 +174,7 @@ async function clarifierNode(state: typeof AgentState.State) {
       enrichedRequest: enrichedRequest || userRequest,
     };
   }
-  
+
   if (planFeedback && planFeedback.trim().length > 0) {
     return {
       clarificationComplete: true,
@@ -187,7 +182,7 @@ async function clarifierNode(state: typeof AgentState.State) {
       enrichedRequest: enrichedRequest || userRequest,
     };
   }
-  
+
   if (skipToPlanning) {
     const historyForEnriched = conversationHistory
       .map(turn => {
@@ -197,25 +192,25 @@ async function clarifierNode(state: typeof AgentState.State) {
         return `- Plan feedback: ${turn.feedback}`;
       })
       .join('\n');
-    
+
     const enrichedRequest = conversationHistory.length > 0
       ? `${userRequest}\n\nUser clarifications:\n${historyForEnriched}`
       : userRequest;
-    
+
     return {
       clarificationComplete: true,
       currentQuestion: null,
       enrichedRequest,
     };
   }
-  
+
   const historyText = conversationHistory.length > 0
     ? conversationHistory.map(turn => {
-        if (turn.type === "qa") {
-          return `Q: ${turn.question}\nA: ${turn.answer}`;
-        }
-        return `[Plan Feedback]: ${turn.feedback}`;
-      }).join('\n\n')
+      if (turn.type === "qa") {
+        return `Q: ${turn.question}\nA: ${turn.answer}`;
+      }
+      return `[Plan Feedback]: ${turn.feedback}`;
+    }).join('\n\n')
     : 'No previous questions yet.';
 
   const prompt = `You are a Product Discovery Expert helping to understand an app idea before designing it.
@@ -272,13 +267,13 @@ OR if ready to design:
 
   try {
     const content = await invokeLLM(prompt);
-    
+
     const jsonMatch = content.match(/```json\n([\s\S]*?)\n```/) || content.match(/\{[\s\S]*\}/);
-    
+
     if (jsonMatch) {
       const jsonStr = jsonMatch[1] || jsonMatch[0];
       const parsed = JSON.parse(jsonStr);
-      
+
       if (parsed.ready) {
         const historyForEnriched = conversationHistory
           .map(turn => {
@@ -288,9 +283,9 @@ OR if ready to design:
             return `- Plan feedback: ${turn.feedback}`;
           })
           .join('\n');
-        
+
         const enrichedRequest = `${userRequest}\n\nUser clarifications:\n${historyForEnriched}\n\nSummary: ${parsed.summary || ''}`;
-        
+
         return {
           clarificationComplete: true,
           currentQuestion: null,
@@ -306,7 +301,7 @@ OR if ready to design:
   } catch (e) {
     console.error("[Clarifier] Error:", e);
   }
-  
+
   return {
     clarificationComplete: true,
     currentQuestion: null,
@@ -317,16 +312,16 @@ OR if ready to design:
 // Node: Design System Generator
 async function designSystemNode(state: typeof AgentState.State) {
   const { userRequest, enrichedRequest, designSystemComplete, selectedDesignSystem, planFeedback, designApproved } = state;
-  
+
   // Skip if already complete or if we're in plan feedback/design approved mode
   if (designSystemComplete || selectedDesignSystem || planFeedback || designApproved) {
     return {
       designSystemComplete: true,
     };
   }
-  
+
   const requestToUse = enrichedRequest || userRequest;
-  
+
   const prompt = `You are an expert UI/UX Designer specializing in Design Systems.
 
 USER PROJECT: "${requestToUse}"
@@ -340,10 +335,10 @@ Based on the project's nature, target audience, and industry, suggest:
    - Mix of heading and body fonts where appropriate
    - Must be real Google Fonts names (exactly as they appear on fonts.google.com)
 
-2. **COLOR PALETTES**: 5 distinct color schemes that match the project's vibe
-   - Each palette should have a unique personality/mood
-   - Colors must be in HEX format
-   - Consider accessibility and contrast ratios
+2. **VIBES**: 5 distinct mood/atmosphere options that match different interpretations of the project
+   - Each vibe should represent a unique visual direction and feeling
+   - Describe the mood, not specific colors - let the designer interpret creatively
+   - Think: "Corporate & Trustworthy" vs "Playful & Vibrant" vs "Dark & Techy"
 
 FORMAT YOUR RESPONSE:
 
@@ -362,18 +357,13 @@ FORMAT YOUR RESPONSE:
       "reason": "Brief reason why this font fits the project"
     }
   ],
-  "palettes": [
+  "vibes": [
     {
-      "id": "palette_1",
-      "name": "Palette Name (e.g., 'Ocean Breeze', 'Corporate Trust')",
-      "colors": {
-        "primary": "#hexcode",
-        "secondary": "#hexcode",
-        "accent": "#hexcode",
-        "background": "#hexcode",
-        "text": "#hexcode"
-      },
-      "reason": "Brief reason why this palette fits the project"
+      "id": "vibe_1",
+      "name": "Vibe Name (e.g., 'Corporate & Professional', 'Playful & Vibrant')",
+      "description": "Detailed description of the mood and atmosphere (e.g., 'Clean lines, trustworthy feel, executive aesthetic with subtle gradients')",
+      "keywords": ["keyword1", "keyword2", "keyword3"],
+      "emoji": "🎯"
     }
   ]
 }
@@ -381,24 +371,25 @@ FORMAT YOUR RESPONSE:
 
 IMPORTANT:
 - Font names must be EXACTLY as they appear on Google Fonts (case-sensitive)
-- All colors must be valid hex codes
-- Each option should be genuinely different, not just variations
-- Respond in the SAME LANGUAGE as the user's request
+- Vibes should describe MOOD and ATMOSPHERE, not specific colors
+- Each vibe should be genuinely different in feeling, not just variations
+- Use appropriate emojis that match the vibe's mood
+- Respond in the SAME LANGUAGE as the user's request (but keep keywords in English)
 `;
 
   try {
     const content = await invokeLLM(prompt);
-    
+
     const jsonMatch = content.match(/```json\n([\s\S]*?)\n```/) || content.match(/\{[\s\S]*\}/);
-    
+
     if (jsonMatch) {
       const jsonStr = jsonMatch[1] || jsonMatch[0];
       const parsed = JSON.parse(jsonStr);
-      
+
       return {
         designSystemOptions: {
           fonts: parsed.fonts || [],
-          palettes: parsed.palettes || [],
+          vibes: parsed.vibes || [],
         },
         designSystemComplete: false,
       };
@@ -406,7 +397,7 @@ IMPORTANT:
   } catch (e) {
     console.error("[DesignSystem] Error:", e);
   }
-  
+
   // Fallback - skip design system selection
   return {
     designSystemComplete: true,
@@ -418,10 +409,10 @@ IMPORTANT:
 async function architectNode(state: typeof AgentState.State) {
   const { userRequest, enrichedRequest, planFeedback, plannedScreens: existingScreens, plannedFlows: existingFlows, designApproved } = state;
   const requestToUse = enrichedRequest || userRequest;
-  
+
   const hasFeedback = planFeedback && planFeedback.trim().length > 0;
   const hasExistingPlan = existingScreens && existingScreens.length > 0;
-  
+
   if (designApproved && hasExistingPlan) {
     return {
       plannedScreens: existingScreens,
@@ -429,7 +420,7 @@ async function architectNode(state: typeof AgentState.State) {
       currentScreenIndex: 0,
     };
   }
-  
+
   let feedbackSection = "";
   if (hasFeedback && hasExistingPlan) {
     const existingPlanText = existingScreens.map(s => `- ${s.name}: ${s.description}`).join('\n');
@@ -446,7 +437,7 @@ USER FEEDBACK ON THIS PLAN: "${planFeedback}"
 You must UPDATE the plan based on this feedback. Add, remove, or modify screens and flows as requested.
 `;
   }
-  
+
   const prompt = `You are an expert Product Architect & UX Lead.
 
 User Request: "${requestToUse}"
@@ -502,11 +493,11 @@ This creates a proper tree visualization, NOT a linear chain.
 
   let plannedScreens: Array<{ id: string; name: string; description: string }> = [];
   let plannedFlows: ScreenFlow[] = [];
-  
+
   try {
     const content = await invokeLLM(prompt);
     const jsonMatch = content.match(/```json\n([\s\S]*?)\n```/) || content.match(/\{[\s\S]*\}/);
-    
+
     if (jsonMatch) {
       const jsonStr = jsonMatch[1] || jsonMatch[0];
       const parsed = JSON.parse(jsonStr);
@@ -516,7 +507,7 @@ This creates a proper tree visualization, NOT a linear chain.
   } catch (e) {
     console.error("[Architect] Error:", e);
   }
-  
+
   return {
     plannedScreens,
     plannedFlows,
@@ -528,43 +519,42 @@ This creates a proper tree visualization, NOT a linear chain.
 async function designerNode(state: typeof AgentState.State) {
   const { plannedScreens, userRequest, enrichedRequest, currentScreenIndex, referenceHtml, generatedScreens, selectedDesignSystem } = state;
   const requestToUse = enrichedRequest || userRequest;
-  
+
   const screen = plannedScreens[currentScreenIndex];
   if (!screen) return { currentScreenHtml: "" };
-  
+
   // Check if screen is already generated
   const existingScreen = generatedScreens.find(s => s.id === screen.id);
   if (existingScreen) {
     console.log(`[Designer] Skipping generation for ${screen.name} (already exists)`);
     return { currentScreenHtml: existingScreen.html };
   }
-  
+
   const isFirstScreen = currentScreenIndex === 0;
-  
+
   // Build design system instructions if user selected one
   let designSystemInstructions = '';
   if (selectedDesignSystem) {
-    const { font, palette } = selectedDesignSystem;
-    
-    // Check if user chose "auto" for colors
-    const colorInstructions = palette.id === 'auto'
-      ? `- **Color Palette**: You have creative freedom to choose the best colors that fit the project's mood and purpose. Pick a cohesive, professional color scheme.`
-      : `- **Color Palette** "${palette.name}":
-  - Primary: ${palette.colors.primary}
-  - Secondary: ${palette.colors.secondary}
-  - Accent: ${palette.colors.accent}
-  - Background: ${palette.colors.background}
-  - Text: ${palette.colors.text}`;
-    
+    const { font, vibe } = selectedDesignSystem;
+
+    // Check if user chose "auto" for vibe
+    const vibeInstructions = vibe.id === 'auto'
+      ? `- **Design Vibe**: You have complete creative freedom. Choose the best colors, gradients, and styling that fit the project's mood and purpose.`
+      : `- **Design Vibe** "${vibe.name}" ${vibe.emoji}:
+  Mood: ${vibe.description}
+  Keywords: ${vibe.keywords.join(', ')}
+  
+  Interpret this vibe creatively - choose colors, gradients, and visual styling that embody this atmosphere. You have freedom in the specific colors, but the overall feel must match this vibe.`;
+
     designSystemInstructions = `
 MANDATORY DESIGN SYSTEM (User Selected):
 - **Font**: Use "${font.googleFontName}" from Google Fonts as the primary font family
-${colorInstructions}
+${vibeInstructions}
 
 You MUST apply this exact font throughout the design. Import the font from Google Fonts in the <head>.
 `;
   }
-  
+
   const basePrompt = `You are an elite UI/UX Designer creating production-ready interfaces.
 
 USER REQUEST: "${requestToUse}"
@@ -601,7 +591,7 @@ LAYOUT - CRITICAL:
 - Use flexbox with flex-col on body and flex-grow on main content to push footer down`;
 
   let prompt: string;
-  
+
   if (isFirstScreen) {
     prompt = `${basePrompt}
 
@@ -640,11 +630,11 @@ No markdown blocks, just raw HTML.`;
       .replace(/```html/g, '')
       .replace(/```/g, '')
       .trim();
-    
+
     if (html.startsWith('"') && html.endsWith('"')) {
       html = html.slice(1, -1);
     }
-    
+
     return { currentScreenHtml: html };
   } catch (e) {
     console.error("[Designer] Error:", e);
@@ -655,10 +645,10 @@ No markdown blocks, just raw HTML.`;
 // Node 3: Save first screen (design system) and set referenceHtml
 async function saveScreenNode(state: typeof AgentState.State) {
   const { currentScreenHtml, plannedScreens, currentScreenIndex } = state;
-  
+
   const screen = plannedScreens[currentScreenIndex];
   if (!screen) return {};
-  
+
   return {
     generatedScreens: [{
       id: screen.id,
@@ -681,22 +671,21 @@ function buildScreenPrompt(
   // Build design system instructions if user selected one
   let designSystemInstructions = '';
   if (selectedDesignSystem) {
-    const { font, palette } = selectedDesignSystem;
-    
-    // Check if user chose "auto" for colors
-    const colorInstructions = palette.id === 'auto'
-      ? `- **Color Palette**: You have creative freedom to choose the best colors that fit the project's mood and purpose. Pick a cohesive, professional color scheme.`
-      : `- **Color Palette** "${palette.name}":
-  - Primary: ${palette.colors.primary}
-  - Secondary: ${palette.colors.secondary}
-  - Accent: ${palette.colors.accent}
-  - Background: ${palette.colors.background}
-  - Text: ${palette.colors.text}`;
-    
+    const { font, vibe } = selectedDesignSystem;
+
+    // Check if user chose "auto" for vibe
+    const vibeInstructions = vibe.id === 'auto'
+      ? `- **Design Vibe**: You have complete creative freedom. Choose the best colors, gradients, and styling that fit the project's mood and purpose.`
+      : `- **Design Vibe** "${vibe.name}" ${vibe.emoji}:
+  Mood: ${vibe.description}
+  Keywords: ${vibe.keywords.join(', ')}
+  
+  Interpret this vibe creatively - choose colors, gradients, and visual styling that embody this atmosphere. You have freedom in the specific colors, but the overall feel must match this vibe.`;
+
     designSystemInstructions = `
 MANDATORY DESIGN SYSTEM (User Selected):
 - **Font**: Use "${font.googleFontName}" from Google Fonts as the primary font family
-${colorInstructions}
+${vibeInstructions}
 
 You MUST apply this exact font throughout the design.
 `;
@@ -769,23 +758,23 @@ async function generateScreenHtmlWithTag(
 
   try {
     console.log(`[generateScreenHtmlWithTag] Starting for screen: ${screen.id}, referenceHtml length: ${referenceHtml?.length || 0}`);
-    
+
     const response = await taggedLLM.invoke(prompt);
-    
+
     let html = (response.content as string)
       .replace(/```html/g, '')
       .replace(/```/g, '')
       .trim();
-    
+
     if (html.startsWith('"') && html.endsWith('"')) {
       html = html.slice(1, -1);
     }
-    
+
     // Validate HTML is complete
     if (!html.includes('</html>')) {
       console.warn(`[generateScreenHtmlWithTag] WARNING: Incomplete HTML for screen ${screen.id} - missing </html> tag`);
     }
-    
+
     console.log(`[generateScreenHtmlWithTag] Completed for screen: ${screen.id}, html length: ${html.length}`);
     return html;
   } catch (e) {
@@ -798,22 +787,22 @@ async function generateScreenHtmlWithTag(
 async function parallelDesignerNode(state: typeof AgentState.State) {
   const { plannedScreens, referenceHtml, userRequest, enrichedRequest, generatedScreens, selectedDesignSystem } = state;
   const requestToUse = enrichedRequest || userRequest;
-  
-  const remainingScreens = plannedScreens.slice(1).filter(screen => 
+
+  const remainingScreens = plannedScreens.slice(1).filter(screen =>
     !generatedScreens.some(generated => generated.id === screen.id)
   );
-  
+
   if (remainingScreens.length === 0) {
     return { generatedScreens: [] };
   }
-  
+
   console.log(`[ParallelDesigner] Starting parallel generation of ${remainingScreens.length} screens`);
   console.log(`[ParallelDesigner] referenceHtml available: ${!!referenceHtml}, length: ${referenceHtml?.length || 0}`);
-  
+
   if (!referenceHtml || referenceHtml.length === 0) {
     console.error('[ParallelDesigner] ERROR: referenceHtml is empty! Design system will not be applied.');
   }
-  
+
   // Use tagged LLM instances so streamEvents can identify which screen each chunk belongs to
   const results = await Promise.all(
     remainingScreens.map(async (screen) => {
@@ -827,9 +816,9 @@ async function parallelDesignerNode(state: typeof AgentState.State) {
       };
     })
   );
-  
+
   console.log(`[ParallelDesigner] All ${remainingScreens.length} screens generated`);
-  
+
   return {
     generatedScreens: results,
     currentScreenIndex: plannedScreens.length,
@@ -840,21 +829,21 @@ async function parallelDesignerNode(state: typeof AgentState.State) {
 
 function afterClarifier(state: typeof AgentState.State): "design_system" | "__end__" {
   const { clarificationComplete, planFeedback, designApproved, designSystemComplete } = state;
-  
+
   // Skip to design_system if design system already complete (user selected font/colors)
   if (designSystemComplete) {
     return "design_system";
   }
-  
+
   // Skip to design_system if plan feedback or design approved (they'll skip through)
   if (planFeedback && planFeedback.trim().length > 0) {
     return "design_system";
   }
-  
+
   if (designApproved) {
     return "design_system";
   }
-  
+
   if (clarificationComplete) {
     return "design_system";
   }
@@ -863,32 +852,32 @@ function afterClarifier(state: typeof AgentState.State): "design_system" | "__en
 
 function afterDesignSystem(state: typeof AgentState.State): "architect" | "__end__" {
   const { designSystemComplete, designSystemOptions, planFeedback, designApproved } = state;
-  
+
   // If plan feedback or design approved, skip to architect
   if (planFeedback && planFeedback.trim().length > 0) {
     return "architect";
   }
-  
+
   if (designApproved) {
     return "architect";
   }
-  
+
   // If design system options are generated but not yet selected, stop and wait for user
   if (designSystemOptions && !designSystemComplete) {
     return "__end__";
   }
-  
+
   // If complete (user selected or skipped), continue to architect
   if (designSystemComplete) {
     return "architect";
   }
-  
+
   return "__end__";
 }
 
 function afterArchitect(state: typeof AgentState.State): "designer" | "__end__" {
   const { designApproved } = state;
-  
+
   if (designApproved) {
     return "designer";
   }
@@ -897,7 +886,7 @@ function afterArchitect(state: typeof AgentState.State): "designer" | "__end__" 
 
 function afterSaveScreen(state: typeof AgentState.State): "parallel_designer" | "__end__" {
   const { plannedScreens } = state;
-  
+
   if (plannedScreens.length > 1) {
     return "parallel_designer";
   }

@@ -31,6 +31,7 @@ import HelpBubble from '@/components/HelpBubble';
 import OverloadModal from '@/components/OverloadModal';
 import SubscriptionModal from '@/components/SubscriptionModal';
 import LoginModal from '@/components/LoginModal';
+import StallWarningModal from '@/components/StallWarningModal';
 import { useConvexAuth, useQuery, useMutation } from 'convex/react';
 import { useAuthActions } from '@convex-dev/auth/react';
 import { api } from '../../convex/_generated/api';
@@ -134,9 +135,60 @@ export default function Home() {
   const designSystemOptionsRef = useRef<DesignSystemOptions | null>(null);
   const selectedDesignSystemRef = useRef<DesignSystemSelection | null>(null);
 
+  // Stall detection: track last chunk timestamp per screen
+  const lastChunkTimestampRef = useRef<Map<string, number>>(new Map());
+  const stallCheckIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const [stallWarning, setStallWarning] = useState<{ screenId: string; screenName: string; duration: number } | null>(null);
+
   useEffect(() => {
     viewModeRef.current = viewMode;
   }, [viewMode]);
+
+  // Stall detection effect - checks every 10s if any generating screen hasn't received chunks
+  useEffect(() => {
+    if (isLoading) {
+      stallCheckIntervalRef.current = setInterval(() => {
+        const now = Date.now();
+        const STALL_THRESHOLD_MS = 45000; // 45 seconds without chunks = stall warning
+
+        // Find screens that are currently generating
+        const generatingScreenIds = nodes
+          .filter(n => n.data?.isGenerating === true)
+          .map(n => n.id);
+
+        for (const screenId of generatingScreenIds) {
+          const lastChunk = lastChunkTimestampRef.current.get(screenId);
+          if (lastChunk && (now - lastChunk) > STALL_THRESHOLD_MS) {
+            const screen = plannedScreensRef.current.find(s => s.id === screenId);
+            const duration = Math.round((now - lastChunk) / 1000);
+            console.warn(`[Stall Detection] Screen ${screenId} (${screen?.name}) has been stalled for ${duration}s`);
+            setStallWarning({
+              screenId,
+              screenName: screen?.name || 'Unknown',
+              duration
+            });
+            break; // Only show one warning at a time
+          }
+        }
+      }, 10000); // Check every 10 seconds
+
+      return () => {
+        if (stallCheckIntervalRef.current) {
+          clearInterval(stallCheckIntervalRef.current);
+          stallCheckIntervalRef.current = null;
+        }
+      };
+    } else {
+      // Clear stall warning and interval when not loading
+      setStallWarning(null);
+      if (stallCheckIntervalRef.current) {
+        clearInterval(stallCheckIntervalRef.current);
+        stallCheckIntervalRef.current = null;
+      }
+      // Clear all timestamps
+      lastChunkTimestampRef.current.clear();
+    }
+  }, [isLoading, nodes]);
 
   // Persist pending prompt to localStorage before OAuth redirect
   useEffect(() => {
@@ -516,6 +568,9 @@ export default function Home() {
                   return msg;
                 });
 
+                // Initialize stall detection timestamp
+                lastChunkTimestampRef.current.set(screenId, Date.now());
+
                 // Set isGenerating on the current node
                 setNodes(prev => prev.map(node => ({
                   ...node,
@@ -541,6 +596,11 @@ export default function Home() {
               if (event.type === 'code_chunk') {
                 const { screenId, content } = event.data;
                 console.log('[Client] code_chunk received:', screenId, content?.length || 0, 'chars');
+
+                // Update stall detection timestamp
+                lastChunkTimestampRef.current.set(screenId, Date.now());
+                // Clear stall warning if we received a chunk for the stalled screen
+                setStallWarning(prev => prev?.screenId === screenId ? null : prev);
 
                 // Update generatedScreensRef
                 const existing = generatedScreensRef.current.find(s => s.id === screenId);
@@ -691,6 +751,12 @@ export default function Home() {
               if (event.type === 'parallel_screens_start') {
                 const { screens } = event.data;
                 console.log('[Client] parallel_screens_start:', screens.length, 'screens');
+
+                // Initialize stall detection timestamps for all parallel screens
+                const now = Date.now();
+                screens.forEach((screen: { id: string }) => {
+                  lastChunkTimestampRef.current.set(screen.id, now);
+                });
 
                 // Set isGenerating on ALL remaining nodes
                 setNodes(prev => prev.map(node => {
@@ -1949,6 +2015,40 @@ export default function Home() {
         onClose={() => {
           setIsLoginModalOpen(false);
           setPendingPrompt(null);
+        }}
+      />
+
+      <StallWarningModal
+        isOpen={stallWarning !== null}
+        screenName={stallWarning?.screenName || ''}
+        duration={stallWarning?.duration || 0}
+        onClose={() => setStallWarning(null)}
+        onRetry={() => {
+          // Abort current generation and restart
+          if (abortControllerRef.current) {
+            abortControllerRef.current.abort();
+            abortControllerRef.current = null;
+          }
+          setStallWarning(null);
+          setIsLoading(false);
+
+          // Clear all generating states
+          setNodes(prev => prev.map(node => ({
+            ...node,
+            data: {
+              ...node.data,
+              isGenerating: false
+            }
+          })));
+
+          // Update message to show retry state
+          updateLastMessage(msg => ({
+            ...msg,
+            isThinkingPaused: true,
+            designSteps: msg.designSteps?.map(s =>
+              s.status === 'running' ? { ...s, status: 'completed' as const, label: s.label + ' (timeout)' } : s
+            ),
+          }));
         }}
       />
     </div>
