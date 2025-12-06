@@ -292,10 +292,39 @@ OR if ready to design:
           enrichedRequest,
         };
       } else {
-        return {
-          currentQuestion: parsed.question,
-          clarificationComplete: false,
-        };
+        // Validate that the question has all required fields
+        const question = parsed.question;
+        if (question && question.question && question.question.trim().length > 0 && question.options && question.options.length > 0) {
+          return {
+            currentQuestion: {
+              id: question.id || `q${conversationHistory.length + 1}`,
+              question: question.question,
+              options: question.options,
+            },
+            clarificationComplete: false,
+          };
+        } else {
+          // Invalid question format, skip to ready
+          console.warn("[Clarifier] Invalid question format, skipping to ready:", question);
+          const historyForEnriched = conversationHistory
+            .map(turn => {
+              if (turn.type === "qa") {
+                return `- ${turn.question}: ${turn.answer}`;
+              }
+              return `- Plan feedback: ${turn.feedback}`;
+            })
+            .join('\n');
+
+          const enrichedRequest = conversationHistory.length > 0
+            ? `${userRequest}\n\nUser clarifications:\n${historyForEnriched}`
+            : userRequest;
+
+          return {
+            clarificationComplete: true,
+            currentQuestion: null,
+            enrichedRequest,
+          };
+        }
       }
     }
   } catch (e) {
@@ -434,7 +463,11 @@ ${existingFlowsText}
 
 USER FEEDBACK ON THIS PLAN: "${planFeedback}"
 
-You must UPDATE the plan based on this feedback. Add, remove, or modify screens and flows as requested.
+**CRITICAL INSTRUCTION**: You MUST strictly follow the user's feedback.
+- If the user asks for a specific number of screens (e.g., "only 2 screens", "just 3 screens"), you MUST return EXACTLY that number of screens. No more, no less.
+- If the user mentions specific screen names to keep, ONLY keep those screens and remove all others.
+- The user's explicit request takes priority over "completeness" - even if the app seems incomplete, respect the user's choice.
+- Do NOT add extra screens "for completeness" or "for better UX" if the user didn't ask for them.
 `;
   }
 
@@ -476,19 +509,28 @@ Format your response:
 }
 \`\`\`
 
-IMPORTANT for flows - CREATE A TREE STRUCTURE:
+IMPORTANT for flows - CREATE A STRICT TREE STRUCTURE:
 - Include ONLY forward navigation paths (no backward flows like logout, back buttons)
-- ONE screen can lead to MULTIPLE screens (branching). Example: Dashboard can lead to both "Settings" AND "Profile"
+- ONE screen can lead to MULTIPLE child screens (branching). Example: Dashboard can lead to both "Settings" AND "Profile"
+- **CRITICAL: Each screen can only have ONE parent (one incoming flow). This is MANDATORY for proper visualization.**
+- **NO convergent flows allowed** - two different screens CANNOT both point to the same destination screen.
+- If multiple paths could logically lead to the same outcome, create separate screens (e.g., "Card Payment Success" and "PayPal Payment Success" instead of one shared "Payment Success")
 - Screens at the same depth in the tree will be displayed vertically stacked
 - Use short, action-oriented labels (e.g., "Signs in", "Views product", "Opens settings")
-- Every screen must have at least one incoming or outgoing flow
+- Every screen must have at least one incoming or outgoing flow (except the root)
 
-EXAMPLE TREE STRUCTURE:
-Landing → Auth → [Dashboard, Admin Panel]
+EXAMPLE VALID TREE STRUCTURE:
+Landing → Auth → Dashboard
 Dashboard → [Cart, Profile, Settings]
-Cart → [Payment Success, Payment Failed]
+Cart → [Card Payment, PayPal Payment]
+Card Payment → Card Success
+PayPal Payment → PayPal Success
 
-This creates a proper tree visualization, NOT a linear chain.
+INVALID (causes visual overlap):
+❌ Dashboard → Success AND Cart → Success (two parents for "Success")
+❌ Login → Dashboard AND Signup → Dashboard (two parents for "Dashboard")
+
+This creates a proper tree visualization where each node has exactly one parent.
 `;
 
   let plannedScreens: Array<{ id: string; name: string; description: string }> = [];

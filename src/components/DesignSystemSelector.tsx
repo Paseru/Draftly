@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ChevronRight, ChevronDown, CheckCircle2, Type, Sparkles } from 'lucide-react';
+import { ChevronRight, ChevronDown, CheckCircle2, Type, Palette } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 export interface FontOption {
@@ -90,7 +90,7 @@ export default function DesignSystemSelector({ options, onSubmit, submittedSelec
       >
         <div className="flex items-center gap-2">
           {isSubmitted ? (
-            <Sparkles size={14} className="text-orange-500" />
+            <Palette size={14} className="text-orange-500" />
           ) : (
             <div className="w-1.5 h-1.5 rounded-full bg-orange-500 animate-pulse" />
           )}
@@ -165,7 +165,7 @@ export default function DesignSystemSelector({ options, onSubmit, submittedSelec
           {/* Vibe Selection */}
           <div className="space-y-2">
             <div className="flex items-center gap-2 text-zinc-400">
-              <Sparkles size={12} />
+              <Palette size={12} />
               <span className="text-[10px] font-medium uppercase tracking-wider">Design Vibe</span>
             </div>
 
@@ -217,7 +217,7 @@ export default function DesignSystemSelector({ options, onSubmit, submittedSelec
                   name: 'Let Draftly choose',
                   description: 'AI will pick the perfect vibe for your project',
                   keywords: [],
-                  emoji: '✨'
+                  emoji: ''
                 })}
                 disabled={isSubmitted}
                 className={cn(
@@ -232,7 +232,6 @@ export default function DesignSystemSelector({ options, onSubmit, submittedSelec
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex-1 space-y-1">
                     <div className="flex items-center gap-2">
-                      <span className="text-base">✨</span>
                       <span className={cn(
                         "text-[12px] font-medium transition-colors",
                         selectedVibe?.id === 'auto' ? "text-blue-300" : "text-zinc-200 group-hover:text-white"

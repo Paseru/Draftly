@@ -18,7 +18,7 @@ export interface ClarificationAnswer {
 interface Props {
   questions: ClarificationQuestion[];
   onSubmit?: (answers: ClarificationAnswer[]) => void;
-  onAutoGenerate?: () => void; // New prop
+  onAutoGenerate?: (answers: ClarificationAnswer[]) => void;
   submittedAnswer?: ClarificationAnswer | null;
   startIndex?: number;
 }
@@ -88,6 +88,16 @@ export default function ClarificationQuestions({ questions, onSubmit, onAutoGene
     onSubmit(formattedAnswers);
   };
 
+  const handleAutoGenerateClick = () => {
+    if (!onAutoGenerate || isAnswered) return;
+    const formattedAnswers: ClarificationAnswer[] = questions.map(q => ({
+      questionId: q.id,
+      question: q.question,
+      answer: answers[q.id] || customInputs[q.id] || "Skipped"
+    }));
+    onAutoGenerate(formattedAnswers);
+  };
+
   const allAnswered = questions.every(q => !!answers[q.id]);
 
   return (
@@ -120,21 +130,12 @@ export default function ClarificationQuestions({ questions, onSubmit, onAutoGene
         <div className="px-4 py-4 pt-6 space-y-6 border-t border-[#27272a] bg-[#181818]">
           {questions.map((q) => (
             <div key={q.id} className="space-y-3">
-              <div className="text-[13px] text-zinc-200 font-medium leading-relaxed markdown-question">
-                <ReactMarkdown
-                  components={{
-                    p: ({ children }) => <p className="m-0">{children}</p>,
-                    strong: ({ children }) => <strong className="text-white font-semibold">{children}</strong>,
-                    em: ({ children }) => <em className="text-zinc-300 italic">{children}</em>,
-                    code: ({ children }) => <code className="bg-zinc-800 px-1 py-0.5 rounded text-zinc-300 text-[11px]">{children}</code>,
-                  }}
-                >
-                  {q.question}
-                </ReactMarkdown>
-              </div>
+              <p className="text-[13px] text-zinc-200 font-medium leading-relaxed">
+                {q.question}
+              </p>
 
               <div className="pl-0 space-y-2">
-                <div className="flex flex-col gap-2">
+                <div className="flex flex-wrap gap-2">
                   {q.options.map((opt) => {
                     const isSelected = answers[q.id] === opt && !activeCustom[q.id];
                     return (
@@ -143,11 +144,11 @@ export default function ClarificationQuestions({ questions, onSubmit, onAutoGene
                         onClick={() => handleSelect(q.id, opt)}
                         disabled={isAnswered}
                         className={cn(
-                          "px-3 py-2.5 rounded-r text-[12px] transition-all duration-200 text-left cursor-pointer border-l-2",
+                          "px-3 py-1.5 rounded text-[11px] transition-all duration-200 border text-left cursor-pointer",
                           isSelected
-                            ? "bg-blue-500/10 border-l-blue-500 text-blue-200"
-                            : "bg-[#202023] border-l-zinc-600 text-zinc-400",
-                          !isAnswered && !isSelected && "hover:bg-[#27272a] hover:border-l-zinc-400 hover:text-zinc-200",
+                            ? "bg-blue-500/10 border-blue-500/40 text-blue-300"
+                            : "bg-[#202023] border-[#27272a] text-zinc-400",
+                          !isAnswered && !isSelected && "hover:bg-[#27272a] hover:border-zinc-600 hover:text-zinc-200",
                           isAnswered && "cursor-default"
                         )}
                       >
@@ -155,7 +156,7 @@ export default function ClarificationQuestions({ questions, onSubmit, onAutoGene
                           <ReactMarkdown
                             components={{
                               p: ({ children }) => <>{children}</>,
-                              strong: ({ children }) => <strong className="font-semibold text-white">{children}</strong>,
+                              strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
                               em: ({ children }) => <em className="italic">{children}</em>,
                             }}
                           >
@@ -170,11 +171,11 @@ export default function ClarificationQuestions({ questions, onSubmit, onAutoGene
                     onClick={() => handleCustomToggle(q.id)}
                     disabled={isAnswered}
                     className={cn(
-                      "px-3 py-1.5 rounded text-[11px] transition-all duration-200 border-l-2 flex items-center gap-1.5 cursor-pointer w-fit",
+                      "px-3 py-1.5 rounded text-[11px] transition-all duration-200 border flex items-center gap-1.5 cursor-pointer",
                       activeCustom[q.id]
-                        ? "bg-amber-500/10 border-l-amber-500 text-amber-300"
-                        : "bg-[#202023] border-l-zinc-600 text-zinc-400",
-                      !isAnswered && !activeCustom[q.id] && "hover:bg-[#27272a] hover:border-l-zinc-400 hover:text-zinc-200",
+                        ? "bg-amber-500/10 border-amber-500/40 text-amber-300"
+                        : "bg-[#202023] border-[#27272a] text-zinc-400",
+                      !isAnswered && !activeCustom[q.id] && "hover:bg-[#27272a] hover:border-zinc-600 hover:text-zinc-200",
                       isAnswered && "cursor-default"
                     )}
                   >
@@ -207,7 +208,7 @@ export default function ClarificationQuestions({ questions, onSubmit, onAutoGene
             <div className="flex justify-end items-center pt-2 border-t border-[#27272a] mt-4 gap-3">
               {onAutoGenerate && (
                 <button
-                  onClick={onAutoGenerate}
+                  onClick={handleAutoGenerateClick}
                   disabled={!allAnswered}
                   className={cn(
                     "mt-3 px-3 py-1.5 rounded text-[11px] font-medium border transition-all mr-auto",

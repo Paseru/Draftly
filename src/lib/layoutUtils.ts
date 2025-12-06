@@ -21,9 +21,52 @@ interface LayoutConfig {
 }
 
 /**
+ * Estimates the width of a label in pixels based on character count.
+ * Uses approximate values matching the AnimatedEdge component's styling:
+ * - text-base (16px), font-medium
+ * - px-6 (24px padding on each side = 48px total)
+ * Average char width ~9px for this font size
+ */
+function estimateLabelWidth(label: string): number {
+  const CHAR_WIDTH = 9; // Average character width for text-base font
+  const PADDING = 48; // px-6 = 24px + 24px
+  const MIN_WIDTH = 100; // Minimum label width
+
+  return Math.max(MIN_WIDTH, label.length * CHAR_WIDTH + PADDING);
+}
+
+/**
+ * Calculates the required horizontal gap based on edge labels.
+ * Finds the longest label and ensures enough space for it plus padding.
+ */
+function calculateDynamicHorizontalGap(
+  flows: ScreenFlow[],
+  baseGap: number
+): number {
+  if (flows.length === 0) return baseGap;
+
+  // Find the longest label width
+  let maxLabelWidth = 0;
+  for (const flow of flows) {
+    if (flow.label) {
+      const labelWidth = estimateLabelWidth(flow.label);
+      maxLabelWidth = Math.max(maxLabelWidth, labelWidth);
+    }
+  }
+
+  // Add extra padding around the label (at least 40px on each side)
+  const LABEL_PADDING = 80;
+  const requiredGap = maxLabelWidth + LABEL_PADDING;
+
+  // Return the larger of base gap or required gap
+  return Math.max(baseGap, requiredGap);
+}
+
+/**
  * Computes node positions based on a directed graph layout (tree structure).
  * Entry points (no incoming edges) are placed at level 0 (leftmost).
  * Each subsequent level contains nodes reachable from the previous level.
+ * Automatically adjusts horizontal gap based on edge label lengths.
  */
 export function computeFlowLayout(
   screens: PlannedScreen[],
@@ -32,7 +75,10 @@ export function computeFlowLayout(
 ): NodePosition[] {
   if (screens.length === 0) return [];
 
-  const { nodeWidth, nodeHeight, horizontalGap, verticalGap } = config;
+  const { nodeWidth, nodeHeight, horizontalGap: baseHorizontalGap, verticalGap } = config;
+
+  // Calculate dynamic horizontal gap based on edge label lengths
+  const horizontalGap = calculateDynamicHorizontalGap(flows, baseHorizontalGap);
 
   // Build adjacency lists from flows ONLY (ignore screen array order)
   const outgoing: Map<string, string[]> = new Map();

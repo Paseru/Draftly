@@ -17,6 +17,8 @@ export default defineSchema({
         // Track monthly generation usage
         generationsUsed: v.optional(v.number()),
         generationsResetAt: v.optional(v.number()), // Timestamp when counter was last reset
+        // Explicitly store remaining generations for easy dashboard viewing
+        remainingGenerations: v.optional(v.number()),
         // Stripe customer ID (for secure subscription lookup)
         stripeCustomerId: v.optional(v.string()),
         // Subscription tracking (source of truth for current plan)

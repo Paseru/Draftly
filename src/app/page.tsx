@@ -35,6 +35,7 @@ import StallWarningModal from '@/components/StallWarningModal';
 import { useConvexAuth, useQuery, useMutation } from 'convex/react';
 import { useAuthActions } from '@convex-dev/auth/react';
 import { api } from '../../convex/_generated/api';
+import { Id } from '../../convex/_generated/dataModel';
 
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
@@ -101,6 +102,7 @@ export default function Home() {
   const [isSubscriptionModalOpen, setIsSubscriptionModalOpen] = useState(false);
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
   const [pendingPrompt, setPendingPrompt] = useState<string | null>(null);
+  const [loadedProjectId, setLoadedProjectId] = useState<string | null>(null);
   const completedScreensCountRef = useRef<number>(0);
   const { isAuthenticated, isLoading: isAuthLoading } = useConvexAuth();
   const { signOut } = useAuthActions();
@@ -120,6 +122,12 @@ export default function Home() {
 
   // Get remaining generations for the user
   const generationsData = useQuery(api.users.getGenerationsRemaining);
+
+  // Load project from URL if present
+  const loadedProject = useQuery(
+    api.projects.getProject,
+    loadedProjectId ? { projectId: loadedProjectId as Id<"projects"> } : "skip"
+  );
 
   // Persistence states for the flow
   const currentPromptRef = useRef<string>('');
@@ -200,15 +208,26 @@ export default function Home() {
   // State to trigger generation after Stripe subscription success
   const [resumeAfterSubscription, setResumeAfterSubscription] = useState<string | null>(null);
 
-  // Handle Stripe checkout success/cancel URL params
+  // Handle Stripe checkout success/cancel URL params AND project loading
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const urlParams = new URLSearchParams(window.location.search);
       const subscriptionStatus = urlParams.get('subscription');
+      const projectId = urlParams.get('project');
+
+      // Handle project loading from URL
+      if (projectId) {
+        console.log('[Project] Loading project from URL:', projectId);
+        setLoadedProjectId(projectId);
+        // Clean up URL to remove project param
+        window.history.replaceState({}, '', window.location.pathname);
+      }
 
       if (subscriptionStatus === 'success') {
         // Remove the URL param without refreshing
         window.history.replaceState({}, '', window.location.pathname);
+        // Clear the stripe flag since subscription completed
+        localStorage.removeItem('pendingPromptSource');
         console.log('[Stripe] Subscription successful!');
 
         // Check if there's a pending prompt to resume
@@ -221,9 +240,11 @@ export default function Home() {
           setResumeAfterSubscription(savedPrompt);
         }
       } else if (subscriptionStatus === 'canceled') {
-        // User canceled checkout - just remove the param
+        // User canceled checkout - remove the param AND clear pending prompt
+        // This prevents the OAuth effect from restarting generation
         window.history.replaceState({}, '', window.location.pathname);
-        console.log('[Stripe] Checkout canceled');
+        localStorage.removeItem('pendingPrompt');
+        console.log('[Stripe] Checkout canceled, cleared pendingPrompt');
       }
     }
   }, []);
@@ -260,10 +281,19 @@ export default function Home() {
           console.log('[OAuth Debug] User has active subscription, triggering subscription resume flow');
           setResumeAfterSubscription(savedPrompt);
         } else {
-          // Normal OAuth flow - user just logged in for the first time
-          localStorage.removeItem('pendingPrompt');
-          console.log('[OAuth Debug] Setting resumePrompt:', savedPrompt);
-          setResumePrompt(savedPrompt);
+          // Check if this prompt was saved by the paywall (Stripe flow)
+          // If so, DON'T auto-resume - user needs to complete subscription first
+          const promptSource = localStorage.getItem('pendingPromptSource');
+          if (promptSource === 'stripe') {
+            console.log('[OAuth Debug] Prompt was saved by paywall, not resuming (user needs subscription)');
+            // Don't resume - user came back without completing Stripe checkout
+            // They may have closed the tab or the browser
+          } else {
+            // Normal OAuth flow - user just logged in for the first time
+            localStorage.removeItem('pendingPrompt');
+            console.log('[OAuth Debug] Setting resumePrompt:', savedPrompt);
+            setResumePrompt(savedPrompt);
+          }
         }
       }
     }
@@ -358,6 +388,84 @@ export default function Home() {
       reactFlowInstance.current.setCenter(x, y, { zoom: 0.6, duration: 1200 });
     }
   }, []);
+
+  // Restore workspace state when a project is loaded from URL
+  useEffect(() => {
+    if (loadedProject && loadedProjectId) {
+      console.log('[Project] Restoring workspace from project:', loadedProject._id);
+
+      // Populate refs from loaded project
+      currentPromptRef.current = loadedProject.prompt;
+      generatedScreensRef.current = loadedProject.screens.map(s => ({
+        id: s.id,
+        name: s.name,
+        html: s.html,
+      }));
+      plannedScreensRef.current = loadedProject.screens.map(s => ({
+        id: s.id,
+        name: s.name,
+        description: '', // Not stored, use empty
+      }));
+
+      // Create ReactFlow nodes from screens using grid layout
+      const config = getLayoutConfig(viewMode);
+      const cols = viewMode === 'mobile' ? 4 : 2;
+      const w = config.nodeWidth;
+      const h = config.nodeHeight;
+      const gap = config.horizontalGap;
+
+      const newNodes: Node[] = loadedProject.screens.map((screen, index) => {
+        const col = index % cols;
+        const row = Math.floor(index / cols);
+
+        return {
+          id: screen.id,
+          type: 'previewNode',
+          position: { x: col * (w + gap), y: row * (h + gap) },
+          data: {
+            label: screen.name,
+            html: screen.html,
+            viewMode,
+            isGenerating: false,
+            onExpand: handleExpand,
+            onShowCode: handleShowCode,
+            onFocus: handleFocus,
+          },
+        };
+      });
+
+      // Set nodes and show workspace
+      setNodes(newNodes);
+      setHasStarted(true);
+      setIsSidebarOpen(true);
+
+      // Update messages to show completion state
+      setMessages([
+        { role: 'assistant', content: 'Hey ! How can i help you design your app today ?' },
+        { role: 'user', content: loadedProject.prompt },
+        {
+          role: 'assistant',
+          content: '',
+          completionMessage: `Project loaded: ${loadedProject.screens.length} screen${loadedProject.screens.length !== 1 ? 's' : ''} restored.`,
+          designSteps: loadedProject.screens.map((s) => ({
+            id: `page-${s.id}`,
+            label: `Page ${s.name} generated`,
+            status: 'completed' as const,
+          })),
+        },
+      ]);
+
+      // Fit view after nodes are set
+      setTimeout(() => {
+        reactFlowInstance.current?.fitView({ duration: 800, padding: 0.15 });
+      }, 100);
+
+      // Clear the loaded project ID to prevent re-triggering
+      setLoadedProjectId(null);
+
+      console.log('[Project] Workspace restored with', loadedProject.screens.length, 'screens');
+    }
+  }, [loadedProject, loadedProjectId, viewMode, handleExpand, handleShowCode, handleFocus, setNodes]);
 
   const updateLastMessage = (updater: (msg: Message) => Message) => {
     setMessages(prev => {
@@ -694,9 +802,16 @@ export default function Home() {
                   return { ...msg, designSteps: steps };
                 });
 
-                // PAYWALL: After 1st screen (design system), stop generation and show subscription modal (unless user has active subscription)
-                if (completedScreensCountRef.current >= 1 && !hasActiveSubscription) {
-                  console.log('[Paywall] Design system generated and no active subscription, triggering subscription modal');
+                // PAYWALL: After 1st screen (design system), check if user has generations remaining (or unlimited)
+                // We access the ref for generationsData if possible, or use the logic:
+                // If they have 0 remaining, they shouldn't have been able to start. 
+                // But if they started with 1, and decrement happens at the END, this check is redundant unless it's strictly for Free Trial enforcement.
+                // We'll trust the start-of-generation check for now, but to be safe, only block if they have NO subscription AND 0 remaining.
+                // Better yet, just check if they are "out of quota" based on what we know.
+                // Since we don't have fresh generationsData here easily without a ref, we'll rely on the initial check.
+                // However, preserving the spirit of the "1 screen free trial":
+                if (completedScreensCountRef.current >= 1 && (!hasActiveSubscription && (!generationsData || generationsData.remaining === 0))) {
+                  console.log('[Paywall] Design system generated and no active subscription/credits, triggering subscription modal');
 
                   // Abort the current generation
                   if (abortControllerRef.current) {
@@ -726,6 +841,9 @@ export default function Home() {
                   // so it can be resumed after Stripe checkout
                   if (currentPromptRef.current) {
                     localStorage.setItem('pendingPrompt', currentPromptRef.current);
+                    // Mark that this prompt was saved by the paywall (Stripe flow)
+                    // This prevents OAuth effect from auto-resuming
+                    localStorage.setItem('pendingPromptSource', 'stripe');
                     console.log('[Paywall] Saved prompt to localStorage:', currentPromptRef.current);
                   }
 
@@ -861,8 +979,15 @@ export default function Home() {
                   designSteps: msg.designSteps?.map(s => ({ ...s, status: 'completed' as const }))
                 }));
 
-                // Increment the generations used counter
-                incrementGenerationsUsed().catch(err => console.error('[Generations] Failed to increment counter:', err));
+                // Only increment generations counter if screens were actually generated
+                // (not for clarification, design system selection, or planning phases)
+                const completedScreens = generatedScreensRef.current.filter(s => s.html.includes('</html>'));
+                if (completedScreens.length > 0) {
+                  console.log('[Generations] Incrementing counter - generated', completedScreens.length, 'screens');
+                  incrementGenerationsUsed().catch(err => console.error('[Generations] Failed to increment counter:', err));
+                } else {
+                  console.log('[Generations] Not incrementing - no completed screens (clarification/planning phase)');
+                }
 
                 // Save project to Convex
                 const screens = generatedScreensRef.current;
@@ -939,9 +1064,9 @@ export default function Home() {
 
   // Process user prompt (after auth check)
   const processUserPrompt = async (userPrompt: string) => {
-    // PAYWALL CHECK: If user has already used free trial and doesn't have subscription, show modal immediately
-    if (hasUsedFreeTrial && !hasActiveSubscription) {
-      console.log('[Paywall] User already used free trial, showing subscription modal immediately');
+    // PAYWALL CHECK: If user has 0 generations remaining (and not unlimited), show modal immediately
+    if (generationsData && generationsData.remaining === 0) {
+      console.log('[Paywall] User has 0 generations remaining, showing subscription modal');
       setIsSubscriptionModalOpen(true);
       return;
     }
@@ -1046,6 +1171,7 @@ export default function Home() {
 
       // Now remove from localStorage since we're about to process
       localStorage.removeItem('pendingPrompt');
+      localStorage.removeItem('pendingPromptSource');
 
       // Show the user's input in the homepage input field briefly
       setInput(promptToProcess);
@@ -1078,25 +1204,18 @@ export default function Home() {
     });
   };
 
-  const handleAutoGenerate = async () => {
-    const lastMsg = messages[messages.length - 1];
-    if (!lastMsg.question) return;
-
-    const autoAnswer: ClarificationAnswer = {
-      questionId: lastMsg.question.id,
-      question: lastMsg.question.question,
-      answer: "Submit & Generate Plan"
-    };
+  const handleAutoGenerate = async (answers: ClarificationAnswer[]) => {
+    const answer = answers[0];
 
     conversationHistoryRef.current.push({
       type: 'qa',
-      question: autoAnswer.question,
-      answer: autoAnswer.answer
+      question: answer.question,
+      answer: answer.answer
     });
 
     updateLastMessage(msg => ({
       ...msg,
-      submittedAnswer: autoAnswer
+      submittedAnswer: answer
     }));
 
     await runGeneration({
@@ -1238,6 +1357,26 @@ export default function Home() {
     setIsResetModalOpen(false);
     setIsSidebarOpen(true);
     setInput('');
+  };
+
+  // Handler for Draftly button click - conditional based on generation progress
+  const handleDraftlyClick = () => {
+    const plannedScreens = plannedScreensRef.current;
+    const generatedScreens = generatedScreensRef.current;
+
+    // Check if all screens are generated with complete HTML
+    const allScreensGenerated =
+      plannedScreens.length > 0 &&
+      generatedScreens.length >= plannedScreens.length &&
+      generatedScreens.every(screen => screen.html && screen.html.includes('</html>'));
+
+    // If all screens are generated and complete, go directly to landing page (no confirmation)
+    if (allScreensGenerated && !isLoading) {
+      handleReset();
+    } else {
+      // Show confirmation modal if generation is in progress or incomplete
+      setIsResetModalOpen(true);
+    }
   };
 
   const handleRequestRefine = () => {
@@ -1530,7 +1669,7 @@ export default function Home() {
           >
             <div className="h-14 border-b border-[#3e3e42] flex items-center px-4 justify-between bg-[#1e1e1e] shrink-0">
               <button
-                onClick={() => setIsResetModalOpen(true)}
+                onClick={handleDraftlyClick}
                 className="flex items-center gap-2 cursor-pointer hover:opacity-80 transition-opacity"
                 title="Retour à l'accueil"
               >

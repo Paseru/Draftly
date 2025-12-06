@@ -5,11 +5,11 @@
  * This prevents duplication and ensures consistency across the codebase.
  */
 
-// Price IDs for each plan (from Stripe Dashboard)
+// Price IDs from Convex environment variables (different for dev vs prod)
 export const STRIPE_PRICES = {
-    starter: "price_1Sb8t2CasKpI7xTZpTbHnCMU",
-    pro: "price_1Sb8t3CasKpI7xTZ6fC3fz1g",
-    enterprise: "price_1Sb8t3CasKpI7xTZ0UuEJiEH",
+    starter: process.env.STRIPE_PRICE_STARTER!,
+    pro: process.env.STRIPE_PRICE_PRO!,
+    enterprise: process.env.STRIPE_PRICE_ENTERPRISE!,
 } as const;
 
 // Valid price IDs for validation (used server-side)

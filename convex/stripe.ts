@@ -123,14 +123,8 @@ export const hasActiveSubscription = query({
             return false;
         }
 
-        const subscriptions = await ctx.runQuery(
-            components.stripe.public.listSubscriptionsByUserId,
-            { userId: userId }
-        );
-
-        return subscriptions.some(
-            (sub) => sub.status === "active" || sub.status === "trialing"
-        );
+        const user = await ctx.db.get(userId);
+        return user?.subscriptionStatus === "active";
     },
 });
 
