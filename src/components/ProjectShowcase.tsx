@@ -3,7 +3,7 @@
 import React, { useState } from 'react';
 import { useQuery } from 'convex/react';
 import { api } from '../../convex/_generated/api';
-import { X, Monitor, Smartphone, ChevronDown } from 'lucide-react';
+import { X, Monitor, Smartphone } from 'lucide-react';
 import { StreamingIframe } from './PreviewNode';
 import HtmlPreview from './HtmlPreview';
 
@@ -168,13 +168,9 @@ export default function ProjectShowcase() {
                         <div className="flex justify-center mt-8">
                             <button
                                 onClick={() => setShowAll(true)}
-                                className="group flex items-center gap-2 px-6 py-3 bg-[#252526] border border-[#3e3e42] rounded-full text-sm font-medium text-zinc-300 hover:text-white hover:border-blue-500/50 hover:bg-[#2a2a2a] transition-all duration-300 cursor-pointer"
+                                className="px-5 py-2 bg-[#252526] border border-[#3e3e42] rounded-lg text-xs text-zinc-400 hover:text-white hover:border-zinc-500 hover:bg-[#2a2a2a] transition-all duration-300 cursor-pointer"
                             >
-                                <span>Show {remainingCount} more</span>
-                                <ChevronDown
-                                    size={18}
-                                    className="transition-transform duration-300 group-hover:translate-y-0.5"
-                                />
+                                Show more
                             </button>
                         </div>
                     )}
