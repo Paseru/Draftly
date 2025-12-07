@@ -82,9 +82,14 @@ export const getGenerationsRemaining = query({
 
         // Check if user has an active subscription in their record
         if (!user.subscriptionPriceId || user.subscriptionStatus !== "active") {
-            // No subscription - check if free trial was used
+            // No subscription - use remainingGenerations directly from DB
+            // Fallback to hasUsedFreeTrial logic only if remainingGenerations is not set
+            const remaining = user.remainingGenerations !== undefined
+                ? user.remainingGenerations
+                : (user.hasUsedFreeTrial ? 0 : 1);
+
             return {
-                remaining: user.hasUsedFreeTrial ? 0 : 1,
+                remaining,
                 total: 1,
                 plan: "free"
             };
