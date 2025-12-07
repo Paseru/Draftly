@@ -114,7 +114,6 @@ export default function Home() {
 
   // Check if user has already used their free trial (stored in Convex)
   const currentUser = useQuery(api.users.getCurrentUser);
-  const markFreeTrialUsed = useMutation(api.users.markFreeTrialUsed);
   const incrementGenerationsUsed = useMutation(api.users.incrementGenerationsUsed);
   const createProject = useMutation(api.projects.createProject);
 
@@ -374,6 +373,33 @@ export default function Home() {
     }
   };
 
+  // Ensure we have a design system markdown available; generate on-demand if missing
+  const ensureDesignSystemMarkdown = useCallback(async (): Promise<string | null> => {
+    if (designSystemMarkdownRef.current) {
+      return designSystemMarkdownRef.current;
+    }
+
+    const firstScreenHtml = generatedScreensRef.current[0]?.html;
+    if (!firstScreenHtml) return null;
+
+    try {
+      const res = await fetch('/api/design-system', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ html: firstScreenHtml })
+      });
+
+      if (!res.ok) return null;
+
+      const data = await res.json();
+      designSystemMarkdownRef.current = data.markdown;
+      return data.markdown;
+    } catch (e) {
+      console.error('ensureDesignSystemMarkdown failed:', e);
+      return null;
+    }
+  }, []);
+
   // Capture screenshot of HTML for project preview card
   const captureScreenshot = async (html: string): Promise<string | null> => {
     try {
@@ -518,6 +544,9 @@ export default function Home() {
         name: s.name,
         html: s.html,
       }));
+      // Restore persisted design system so export is instant
+      // (schema stores markdown directly on the project)
+      designSystemMarkdownRef.current = loadedProject.designSystemMarkdown || null;
       plannedScreensRef.current = loadedProject.screens.map(s => ({
         id: s.id,
         name: s.name,
@@ -1016,76 +1045,6 @@ export default function Home() {
                   return { ...msg, designSteps: steps };
                 });
 
-                // PAYWALL: After 1st screen (design system), check if user should be blocked
-                // Free trial users get 1 screen only - block them after the first screen completes
-                // Users with a subscription (remaining > 0 or unlimited = -1) can continue
-                const isFreeTrialUser = !hasActiveSubscription || (generationsData?.plan === 'free');
-                const shouldBlockForPaywall = completedScreensCountRef.current >= 1 && isFreeTrialUser;
-
-                if (shouldBlockForPaywall) {
-                  console.log('[Paywall] Design system generated and no active subscription/credits, triggering subscription modal');
-
-                  // Abort the current generation
-                  if (abortControllerRef.current) {
-                    abortControllerRef.current.abort();
-                    abortControllerRef.current = null;
-                  }
-
-                  // Cancel the reader to stop receiving data
-                  reader.cancel().catch(() => { });
-
-                  // Clear isGenerating on all nodes
-                  setNodes(prev => prev.map(node => ({
-                    ...node,
-                    data: {
-                      ...node.data,
-                      isGenerating: false
-                    }
-                  })));
-
-                  // Stop loading state
-                  setIsLoading(false);
-
-                  // Mark that user has used their free trial (persisted in Convex)
-                  markFreeTrialUsed().catch(console.error);
-
-                  // Save COMPLETE generation state to localStorage for resume after Stripe checkout
-                  // This allows resuming from where we stopped instead of restarting from scratch
-                  const generationState = {
-                    prompt: currentPromptRef.current,
-                    plannedScreens: plannedScreensRef.current,
-                    plannedFlows: plannedFlowsRef.current,
-                    generatedScreens: generatedScreensRef.current,
-                    selectedDesignSystem: selectedDesignSystemRef.current,
-                    conversationHistory: conversationHistoryRef.current,
-                    currentScreenIndex: completedScreensCountRef.current,
-                  };
-                  localStorage.setItem('pendingGenerationState', JSON.stringify(generationState));
-                  localStorage.setItem('pendingPrompt', currentPromptRef.current);
-                  localStorage.setItem('pendingPromptSource', 'stripe');
-                  console.log('[Paywall] Saved complete generation state:', {
-                    prompt: generationState.prompt?.substring(0, 50) + '...',
-                    plannedScreensCount: generationState.plannedScreens?.length,
-                    generatedScreensCount: generationState.generatedScreens?.length,
-                    currentScreenIndex: generationState.currentScreenIndex,
-                  });
-
-                  // Show subscription modal
-                  setIsSubscriptionModalOpen(true);
-
-                  // Update message to show paused state
-                  updateLastMessage(msg => ({
-                    ...msg,
-                    isThinkingPaused: true,
-                    designSteps: msg.designSteps?.map(s =>
-                      s.status === 'running' ? { ...s, status: 'completed' as const } : s
-                    ),
-                  }));
-
-                  // Set flag to break out of the SSE reading loop
-                  shouldStopGeneration = true;
-                  break; // Break out of the 'for (const line of lines)' loop
-                }
               }
 
               // Parallel screens start - show all remaining screen loaders at once
@@ -1215,6 +1174,8 @@ export default function Home() {
                 // Save project to Convex
                 const screens = generatedScreensRef.current;
                 if (screens.length > 0 && currentPromptRef.current) {
+                  const designSystemMarkdown = await ensureDesignSystemMarkdown();
+
                   // Create title from first 50 chars of prompt
                   const title = currentPromptRef.current.slice(0, 50) + (currentPromptRef.current.length > 50 ? '...' : '');
 
@@ -1249,6 +1210,7 @@ export default function Home() {
                     flowsCount: plannedFlowsRef.current.length,
                     messagesCount: currentMessages.length,
                     hasPreviewImage: !!previewImageRef.current,
+                    hasDesignSystem: !!designSystemMarkdown,
                   });
 
                   createProject({
@@ -1266,6 +1228,7 @@ export default function Home() {
                     })),
                     previewImage: previewImageRef.current || undefined,
                     messages: currentMessages,
+                    designSystemMarkdown: designSystemMarkdown || undefined,
                   }).catch(err => console.error('[Project] Failed to save project:', err));
                 }
               }
@@ -1296,10 +1259,10 @@ export default function Home() {
   }, [
     createProject,
     generationsData,
+    ensureDesignSystemMarkdown,
     hasActiveSubscription,
     incrementGenerationsUsed,
     isLoading,
-    markFreeTrialUsed,
     setHasStarted,
     setIsLoading,
     setIsOverloadModalOpen,

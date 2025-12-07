@@ -18,6 +18,7 @@ export const createProject = mutation({
             label: v.optional(v.string()),
         }))),
         previewImage: v.optional(v.string()),
+        designSystemMarkdown: v.optional(v.string()),
         messages: v.optional(v.array(v.object({
             role: v.string(),
             content: v.optional(v.string()),
@@ -60,6 +61,7 @@ export const createProject = mutation({
             isPublic: true, // Default to public as requested
             previewHtml,
             previewImage: args.previewImage,
+            designSystemMarkdown: args.designSystemMarkdown,
             messages: args.messages,
             createdAt: now,
             updatedAt: now,

@@ -52,6 +52,8 @@ export default defineSchema({
         previewHtml: v.optional(v.string()),
         // Screenshot of first screen for preview (base64)
         previewImage: v.optional(v.string()),
+        // Persisted design system markdown so it can be re-downloaded without regenerating
+        designSystemMarkdown: v.optional(v.string()),
         // Store sidebar conversation messages
         messages: v.optional(v.array(v.object({
             role: v.string(),

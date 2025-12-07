@@ -137,38 +137,25 @@ export const incrementGenerationsUsed = mutation({
             throw new Error("User not found");
         }
 
-        const now = Date.now();
-        const resetAt = user.generationsResetAt || 0;
-        const oneMonthAgo = now - (30 * 24 * 60 * 60 * 1000);
+    const now = Date.now();
+    const resetAt = user.generationsResetAt || 0;
+    const oneMonthAgo = now - (30 * 24 * 60 * 60 * 1000);
 
-        let newGenerationsUsed = (user.generationsUsed || 0) + 1;
+    let newGenerationsUsed = (user.generationsUsed || 0) + 1;
 
-        // Reset if older than a month
-        if (resetAt < oneMonthAgo) {
-            newGenerationsUsed = 1;
-        }
+    // Reset if older than a month
+    if (resetAt < oneMonthAgo) {
+        newGenerationsUsed = 1;
+    }
 
-        // Calculate Remaining for visibility
-        let remaining = 0;
-        if (!user.subscriptionPriceId || user.subscriptionStatus !== "active") {
-            // Free user logic
-            remaining = 0; // consumed free trial
-        } else {
-            let plan: "starter" | "pro" | "enterprise" = "starter";
-            if (user.subscriptionPriceId === STRIPE_PRICES.pro) plan = "pro";
-            else if (user.subscriptionPriceId === STRIPE_PRICES.enterprise) plan = "enterprise";
+    const isSubscribed = user.subscriptionPriceId && user.subscriptionStatus === "active";
 
-            const limit = PLAN_LIMITS[plan];
-            if (limit === -1) {
-                remaining = 9999;
-            } else {
-                remaining = Math.max(0, limit - newGenerationsUsed);
-            }
-        }
-
+    // Free users get a single full generation. Mark the trial as used as soon as a generation completes.
+    if (!isSubscribed) {
         const updates: any = {
             generationsUsed: newGenerationsUsed,
-            remainingGenerations: remaining
+            hasUsedFreeTrial: true,
+            remainingGenerations: 0,
         };
 
         if (resetAt < oneMonthAgo) {
@@ -176,6 +163,27 @@ export const incrementGenerationsUsed = mutation({
         }
 
         await ctx.db.patch(userId, updates);
+        return { success: true };
+    }
+
+    // Subscription logic
+    let plan: "starter" | "pro" | "enterprise" = "starter";
+    if (user.subscriptionPriceId === STRIPE_PRICES.pro) plan = "pro";
+    else if (user.subscriptionPriceId === STRIPE_PRICES.enterprise) plan = "enterprise";
+
+    const limit = PLAN_LIMITS[plan];
+    const remaining = limit === -1 ? 9999 : Math.max(0, limit - newGenerationsUsed);
+
+    const updates: any = {
+        generationsUsed: newGenerationsUsed,
+        remainingGenerations: remaining
+    };
+
+    if (resetAt < oneMonthAgo) {
+        updates.generationsResetAt = now;
+    }
+
+    await ctx.db.patch(userId, updates);
 
         return { success: true };
     },
