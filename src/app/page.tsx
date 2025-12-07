@@ -1149,8 +1149,8 @@ export default function Home() {
                     hasDesignSystem: !!designSystemMarkdown,
                   });
 
-                  // Store prompt for AI name extraction (before async operations)
-                  const promptForExtraction = currentPromptRef.current;
+                  // Get first screen HTML for AI name extraction
+                  const firstScreenHtml = screens[0]?.html || '';
 
                   createProject({
                     title: tempTitle,
@@ -1171,13 +1171,13 @@ export default function Home() {
                     if (result?.projectId) {
                       setSavedProjectId(result.projectId);
 
-                      // Extract AI-generated name in background
+                      // Extract AI-generated name from first screen HTML
                       try {
-                        console.log('[Project] Extracting AI-generated name...');
+                        console.log('[Project] Extracting app name from HTML...');
                         const nameResponse = await fetch('/api/extract-name', {
                           method: 'POST',
                           headers: { 'Content-Type': 'application/json' },
-                          body: JSON.stringify({ prompt: promptForExtraction }),
+                          body: JSON.stringify({ html: firstScreenHtml }),
                         });
 
                         if (nameResponse.ok) {
