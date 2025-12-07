@@ -59,8 +59,8 @@ export default function ProjectShowcase() {
     return (
         <>
             <section className="w-full -mt-16 pb-12">
-                <div className="max-w-5xl mx-auto px-6">
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                <div className="max-w-7xl mx-auto px-6">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                         {publicProjects.map((project) => {
                             const cardHtml = project.previewHtml || project.screens?.[0]?.html || '';
                             const hasHtml = cardHtml.trim().length > 0;
