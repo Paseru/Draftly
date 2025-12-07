@@ -18,10 +18,7 @@ let credentialsPath =
 if (inlineCredentials) {
   try {
     // Parse to validate JSON
-    const parsed = JSON.parse(inlineCredentials);
-    console.log("[Vertex] GOOGLE_SERVICE_ACCOUNT_KEY found");
-    console.log("[Vertex] Project ID:", parsed.project_id);
-    console.log("[Vertex] Client email:", parsed.client_email);
+    JSON.parse(inlineCredentials);
 
     // Write to temp file
     const tempDir = os.tmpdir();
@@ -30,17 +27,14 @@ if (inlineCredentials) {
 
     // Update credentials path to point to temp file
     credentialsPath = tempFilePath;
-    console.log("[Vertex] ✅ Credentials written to temp file:", tempFilePath);
+    console.log("[Vertex] Using inline credentials");
   } catch (e) {
-    console.error("[Vertex] ❌ Failed to parse/write GOOGLE_SERVICE_ACCOUNT_KEY:", e);
+    console.error("[Vertex] Failed to parse/write credentials");
   }
-} else {
-  console.log("[Vertex] No inline credentials, using file:", credentialsPath);
 }
 
 // Set GOOGLE_APPLICATION_CREDENTIALS for the Google SDK
 process.env.GOOGLE_APPLICATION_CREDENTIALS = credentialsPath;
-console.log("[Vertex] GOOGLE_APPLICATION_CREDENTIALS set to:", credentialsPath);
 
 export function buildVertexConfig(model: string) {
   return {
