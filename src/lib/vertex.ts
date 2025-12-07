@@ -29,7 +29,7 @@ if (inlineCredentials) {
     credentialsPath = tempFilePath;
     console.log("[Vertex] Using inline credentials");
   } catch (e) {
-    console.error("[Vertex] Failed to parse/write credentials");
+    console.error("[Vertex] Failed to parse/write credentials", e);
   }
 }
 

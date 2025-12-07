@@ -163,6 +163,33 @@ export const toggleProjectVisibility = mutation({
     },
 });
 
+// Update project title (for AI-generated names)
+export const updateProjectTitle = mutation({
+    args: {
+        projectId: v.id("projects"),
+        title: v.string(),
+    },
+    handler: async (ctx, args) => {
+        const userId = await getAuthUserId(ctx);
+        if (!userId) {
+            throw new Error("Not authenticated");
+        }
+
+        const project = await ctx.db.get(args.projectId);
+
+        if (!project || project.userId !== userId) {
+            throw new Error("Project not found or access denied");
+        }
+
+        await ctx.db.patch(args.projectId, {
+            title: args.title,
+            updatedAt: Date.now(),
+        });
+
+        return { success: true };
+    },
+});
+
 // Get public projects (showcase)
 export const getPublicProjects = query({
     args: {

@@ -40,11 +40,11 @@ import { Id } from '../../convex/_generated/dataModel';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import ProjectShowcase from '@/components/ProjectShowcase'; // Import ProjectShowcase
+import ShowcaseToggleBlock from '@/components/ShowcaseToggleBlock';
 import { ConversationTurn, ScreenFlow } from '@/ai/graph';
 import { AnimatePresence, motion } from 'framer-motion';
 import AnimatedEdge from '@/components/AnimatedEdge';
 import { computeFlowLayout, getLayoutConfig } from '@/lib/layoutUtils';
-import html2canvas from 'html2canvas';
 
 interface PlannedScreen {
   id: string;
@@ -105,6 +105,7 @@ export default function Home() {
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
   const [pendingPrompt, setPendingPrompt] = useState<string | null>(null);
   const [loadedProjectId, setLoadedProjectId] = useState<string | null>(null);
+  const [savedProjectId, setSavedProjectId] = useState<Id<"projects"> | null>(null);
   const completedScreensCountRef = useRef<number>(0);
   const { isAuthenticated, isLoading: isAuthLoading } = useConvexAuth();
   const { signOut } = useAuthActions();
@@ -116,6 +117,7 @@ export default function Home() {
   const currentUser = useQuery(api.users.getCurrentUser);
   const incrementGenerationsUsed = useMutation(api.users.incrementGenerationsUsed);
   const createProject = useMutation(api.projects.createProject);
+  const updateProjectTitle = useMutation(api.projects.updateProjectTitle);
 
   // Get first name from user
   const firstName = currentUser?.name?.split(' ')[0] || '';
@@ -143,8 +145,6 @@ export default function Home() {
   // Design System refs
   const designSystemOptionsRef = useRef<DesignSystemOptions | null>(null);
   const selectedDesignSystemRef = useRef<DesignSystemSelection | null>(null);
-  // Preview screenshot for project card
-  const previewImageRef = useRef<string | null>(null);
   // Messages ref for access in SSE callbacks (avoids stale closure)
   const messagesRef = useRef<Message[]>([]);
 
@@ -399,64 +399,6 @@ export default function Home() {
       return null;
     }
   }, []);
-
-  // Capture screenshot of HTML for project preview card
-  const captureScreenshot = async (html: string): Promise<string | null> => {
-    try {
-      // Create a temporary container
-      const container = document.createElement('div');
-      container.style.position = 'fixed';
-      container.style.left = '-9999px';
-      container.style.top = '0';
-      container.style.width = '1920px';
-      container.style.height = '1080px';
-      container.style.overflow = 'hidden';
-      container.style.zIndex = '-9999';
-      document.body.appendChild(container);
-
-      // Create iframe
-      const iframe = document.createElement('iframe');
-      iframe.style.width = '1920px';
-      iframe.style.height = '1080px';
-      iframe.style.border = 'none';
-      container.appendChild(iframe);
-
-      // Write HTML to iframe
-      const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document;
-      if (!iframeDoc) {
-        document.body.removeChild(container);
-        return null;
-      }
-      iframeDoc.open();
-      iframeDoc.write(html);
-      iframeDoc.close();
-
-      // Wait for iframe content to load
-      await new Promise(resolve => setTimeout(resolve, 500));
-
-      // Capture with html2canvas
-      const canvas = await html2canvas(iframeDoc.body, {
-        width: 1920,
-        height: 1080,
-        scale: 0.25, // Reduce size for storage
-        useCORS: true,
-        allowTaint: true,
-        logging: false,
-      });
-
-      // Convert to base64
-      const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
-
-      // Cleanup
-      document.body.removeChild(container);
-
-      console.log('[Screenshot] Captured preview image, size:', Math.round(dataUrl.length / 1024), 'KB');
-      return dataUrl;
-    } catch (e) {
-      console.error('[Screenshot] Failed to capture:', e);
-      return null;
-    }
-  };
 
   const abortControllerRef = useRef<AbortController | null>(null);
   const reactFlowInstance = useRef<ReactFlowInstance | null>(null);
@@ -754,7 +696,7 @@ export default function Home() {
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let buffer = '';
-      let shouldStopGeneration = false; // Flag to break out of SSE loop when paywall triggers
+      const shouldStopGeneration = false; // Flag to break out of SSE loop when paywall triggers
 
       while (true) {
         const { done, value } = await reader.read();
@@ -1008,11 +950,6 @@ export default function Home() {
                       designSystemGenerationStartedRef.current = true;
                       generateDesignSystemInBackground(completedNode.html);
                     }
-                    captureScreenshot(completedNode.html).then(img => {
-                      if (img) {
-                        previewImageRef.current = img;
-                      }
-                    });
                   }
                 }
 
@@ -1176,8 +1113,8 @@ export default function Home() {
                 if (screens.length > 0 && currentPromptRef.current) {
                   const designSystemMarkdown = await ensureDesignSystemMarkdown();
 
-                  // Create title from first 50 chars of prompt
-                  const title = currentPromptRef.current.slice(0, 50) + (currentPromptRef.current.length > 50 ? '...' : '');
+                  // Create temporary title from first 50 chars of prompt (will be replaced by AI-generated name)
+                  const tempTitle = currentPromptRef.current.slice(0, 50) + (currentPromptRef.current.length > 50 ? '...' : '');
 
                   // Get current messages from ref (avoids stale closure issue)
                   const currentMessages = messagesRef.current.map(m => ({
@@ -1209,12 +1146,14 @@ export default function Home() {
                     screensCount: screens.length,
                     flowsCount: plannedFlowsRef.current.length,
                     messagesCount: currentMessages.length,
-                    hasPreviewImage: !!previewImageRef.current,
                     hasDesignSystem: !!designSystemMarkdown,
                   });
 
+                  // Store prompt for AI name extraction (before async operations)
+                  const promptForExtraction = currentPromptRef.current;
+
                   createProject({
-                    title,
+                    title: tempTitle,
                     prompt: currentPromptRef.current,
                     screens: screens.map(s => ({
                       id: s.id,
@@ -1226,9 +1165,35 @@ export default function Home() {
                       to: f.to,
                       label: f.label,
                     })),
-                    previewImage: previewImageRef.current || undefined,
                     messages: currentMessages,
                     designSystemMarkdown: designSystemMarkdown || undefined,
+                  }).then(async result => {
+                    if (result?.projectId) {
+                      setSavedProjectId(result.projectId);
+
+                      // Extract AI-generated name in background
+                      try {
+                        console.log('[Project] Extracting AI-generated name...');
+                        const nameResponse = await fetch('/api/extract-name', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ prompt: promptForExtraction }),
+                        });
+
+                        if (nameResponse.ok) {
+                          const { name } = await nameResponse.json();
+                          if (name && name !== tempTitle) {
+                            console.log('[Project] Updating title to:', name);
+                            await updateProjectTitle({
+                              projectId: result.projectId,
+                              title: name,
+                            });
+                          }
+                        }
+                      } catch (err) {
+                        console.error('[Project] Failed to extract AI name (keeping temp title):', err);
+                      }
+                    }
                   }).catch(err => console.error('[Project] Failed to save project:', err));
                 }
               }
@@ -1258,19 +1223,17 @@ export default function Home() {
     }
   }, [
     createProject,
-    generationsData,
     ensureDesignSystemMarkdown,
-    hasActiveSubscription,
     incrementGenerationsUsed,
     isLoading,
     setHasStarted,
     setIsLoading,
     setIsOverloadModalOpen,
-    setIsSubscriptionModalOpen,
     setMessages,
     setNodes,
     setStallWarning,
-    updateLastMessage
+    updateLastMessage,
+    updateProjectTitle
   ]);
 
   const sendMessage = async (e: React.FormEvent) => {
@@ -1749,9 +1712,9 @@ export default function Home() {
     designSystemOptionsRef.current = null;
     selectedDesignSystemRef.current = null;
     completedScreensCountRef.current = 0;
-    previewImageRef.current = null;
     messagesRef.current = [];
     setIsResetModalOpen(false);
+    setSavedProjectId(null);
     setIsSidebarOpen(true);
     setInput('');
   };
@@ -2169,6 +2132,13 @@ export default function Home() {
                             >
                               {msg.completionMessage}
                             </ReactMarkdown>
+                          </div>
+                        )}
+
+                        {/* Showcase Toggle Block - only for newly created projects, not loaded ones */}
+                        {msg.completionMessage && savedProjectId && !loadedProjectId && (
+                          <div className="mt-2">
+                            <ShowcaseToggleBlock projectId={savedProjectId} initialIsPublic={true} />
                           </div>
                         )}
 

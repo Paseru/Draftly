@@ -4,8 +4,8 @@ import React, { useState } from 'react';
 import { useQuery } from 'convex/react';
 import { api } from '../../convex/_generated/api';
 import { X, Monitor, Smartphone } from 'lucide-react';
-import Image from 'next/image';
 import { StreamingIframe } from './PreviewNode';
+import HtmlPreview from './HtmlPreview';
 
 function getRelativeTime(timestamp: number): string {
     const now = Date.now();
@@ -25,7 +25,6 @@ type ProjectType = {
     _id: string;
     title: string;
     screens: { id: string; name: string; html: string }[];
-    previewImage?: string;
     previewHtml?: string;
     authorName?: string;
     createdAt: number;
@@ -64,6 +63,7 @@ export default function ProjectShowcase() {
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                         {publicProjects.map((project) => {
                             const cardHtml = project.previewHtml || project.screens?.[0]?.html || '';
+                            const hasHtml = cardHtml.trim().length > 0;
                             return (
                             <button
                                 key={project._id}
@@ -72,23 +72,12 @@ export default function ProjectShowcase() {
                             >
                                 {/* Preview */}
                                 <div className="relative w-full aspect-[16/10] bg-[#1a1a1a] overflow-hidden">
-                                    {project.previewImage ? (
-                                        <Image
-                                            src={project.previewImage}
-                                            alt={project.title}
-                                            fill
-                                            unoptimized
-                                            className="object-cover object-top"
-                                            sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
+                                    {hasHtml ? (
+                                        <HtmlPreview
+                                            html={cardHtml}
+                                            title={project.title}
+                                            className="absolute inset-0"
                                         />
-                                    ) : cardHtml ? (
-                                        <div className="absolute inset-0 origin-top-left scale-[0.2] w-[500%] h-[500%]">
-                                            <StreamingIframe
-                                                html={cardHtml}
-                                                title={project.title}
-                                                isGenerating={false}
-                                            />
-                                        </div>
                                     ) : (
                                         <div className="flex items-center justify-center h-full text-zinc-600 text-xs">
                                             No preview

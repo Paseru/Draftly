@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Draftly Update</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #1e1e1e;
+            font-family: "Geist Mono", ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+            color: #d4d4d4;
+        }
+
+        .main-container {
+            max-width: 1280px;
+            margin: 0 auto;
+            padding: 40px 20px;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 40px;
+        }
+
+        .logo-container {
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            text-decoration: none;
+        }
+
+        .logo-icon {
+            width: 40px;
+            height: 40px;
+            background: rgba(59, 130, 246, 0.1);
+            border: 1px solid rgba(59, 130, 246, 0.2);
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .logo-text {
+            font-size: 24px;
+            font-weight: 600;
+            color: #e4e4e7;
+            letter-spacing: -0.5px;
+        }
+
+        .columns {
+            display: flex;
+            gap: 24px;
+            justify-content: center;
+        }
+
+        .column {
+            flex: 1;
+            max-width: 600px;
+        }
+
+        .lang-label {
+            text-align: center;
+            margin-bottom: 16px;
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: #52525b;
+        }
+
+        .content {
+            background-color: #252526;
+            padding: 32px;
+            border-radius: 12px;
+            border: 1px solid #3e3e42;
+        }
+
+        h1 {
+            color: #e4e4e7;
+            font-size: 22px;
+            margin-top: 0;
+            margin-bottom: 24px;
+            line-height: 1.3;
+            font-weight: 600;
+        }
+
+        p {
+            font-size: 14px;
+            line-height: 1.7;
+            margin-bottom: 18px;
+            color: #a1a1aa;
+        }
+
+        .highlight {
+            color: #60a5fa;
+            font-weight: 500;
+        }
+
+        .button-container {
+            text-align: center;
+            margin-top: 32px;
+            margin-bottom: 32px;
+        }
+
+        .button {
+            display: inline-block;
+            background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+            color: #ffffff;
+            padding: 14px 28px;
+            border-radius: 8px;
+            text-decoration: none;
+            font-weight: 600;
+            font-size: 14px;
+            box-shadow: 0 4px 14px rgba(59, 130, 246, 0.3);
+        }
+
+        .footer {
+            text-align: center;
+            margin-top: 40px;
+            font-size: 12px;
+            color: #52525b;
+        }
+
+        .divider {
+            height: 1px;
+            background-color: #3e3e42;
+            margin: 28px 0;
+        }
+
+        ul {
+            padding-left: 20px;
+            margin-bottom: 20px;
+        }
+
+        li {
+            margin-bottom: 12px;
+            color: #a1a1aa;
+            font-size: 14px;
+            line-height: 1.6;
+        }
+
+        li strong {
+            color: #60a5fa;
+        }
+
+        .emoji {
+            margin-right: 6px;
+        }
+
+        @media (max-width: 900px) {
+            .columns {
+                flex-direction: column;
+                align-items: center;
+            }
+
+            .column {
+                width: 100%;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="main-container">
+        <div class="header">
+            <a href="https://draftly.app" class="logo-container">
+                <div class="logo-icon">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path
+                            d="M18.37 2.63L14 7L17 10L21.37 5.63C22.21 4.79 22.21 3.47 21.37 2.63C20.53 1.79 19.21 1.79 18.37 2.63Z"
+                            fill="#60a5fa" fill-opacity="0.8" />
+                        <path d="M13 8L5.5 15.5C4.5 16.5 4 18 4 19.5L4.5 20L5 19.5C6.5 19.5 8 19 9 18L16 11L13 8Z"
+                            fill="#60a5fa" fill-opacity="0.6" />
+                        <path d="M4 19.5C4 20.88 5.12 22 6.5 22C7.5 22 8.5 21.5 9 20.5L4.5 20L4 19.5Z" fill="#60a5fa" />
+                    </svg>
+                </div>
+                <span class="logo-text">Draftly</span>
+            </a>
+        </div>
+
+        <div class="columns">
+            <!-- ENGLISH VERSION -->
+            <div class="column">
+                <div class="lang-label">🇬🇧 English</div>
+                <div class="content">
+                    <h1>We've Fixed It All. Seriously. 🚀</h1>
+
+                    <p>Hi there,</p>
+
+                    <p>We want to sincerely apologize for the bugs and hiccups you may have encountered since the launch
+                        of Draftly. We know it hasn't been the smooth experience we aimed for.</p>
+
+                    <p>We've been working around the clock to address every single issue, and we're thrilled to announce
+                        that <span class="highlight">everything has been fixed from A to Z</span>.</p>
+
+                    <div class="divider"></div>
+
+                    <p>To make it up to you, we have:</p>
+                    <ul>
+                        <li><span class="emoji">🔄</span><strong>Reset your credits</strong> so you can start fresh.
+                        </li>
+                        <li><span class="emoji">⏰</span><strong>Extended your free trial</strong> to give you ample time
+                            to explore.</li>
+                    </ul>
+
+                    <p>And the best part? It's no longer just about generating a single screen. <span
+                            class="highlight">Draftly now generates every single screen in your entire project
+                            flow</span> — a complete, end-to-end generation.</p>
+
+                    <div class="button-container">
+                        <a href="https://draftly.app" class="button">Start Creating Now →</a>
+                    </div>
+
+                    <p>We're incredibly excited for you to test this new, stable version. We can't wait to see what you
+                        build — whether it's a SaaS dashboard, an e-commerce store, a portfolio, or something entirely
+                        unique.</p>
+
+                    <p>We'd love to hear your feedback!</p>
+
+                    <p style="margin-bottom: 0;">Best,<br><span style="color: #60a5fa;">The Draftly Team</span></p>
+                </div>
+            </div>
+
+            <!-- FRENCH VERSION -->
+            <div class="column">
+                <div class="lang-label">🇫🇷 Français</div>
+                <div class="content">
+                    <h1>Tout a été corrigé. Vraiment. 🚀</h1>
+
+                    <p>Bonjour,</p>
+
+                    <p>Nous tenons à nous excuser sincèrement pour les bugs et les problèmes que vous avez pu rencontrer
+                        depuis le lancement de Draftly. Nous savons que l'expérience n'a pas été à la hauteur de nos
+                        attentes.</p>
+
+                    <p>Nous avons travaillé sans relâche pour résoudre chaque problème, et nous sommes ravis de vous
+                        annoncer que <span class="highlight">tout a été corrigé de A à Z</span>.</p>
+
+                    <div class="divider"></div>
+
+                    <p>Pour nous faire pardonner :</p>
+                    <ul>
+                        <li><span class="emoji">🔄</span><strong>Vos crédits ont été réinitialisés</strong> pour
+                            repartir de zéro.</li>
+                        <li><span class="emoji">⏰</span><strong>Votre période d'essai a été prolongée</strong> pour vous
+                            laisser le temps d'explorer.</li>
+                    </ul>
+
+                    <p>Et le meilleur ? Ce n'est plus seulement un écran qui est généré. <span class="highlight">Draftly
+                            génère désormais tous les écrans de votre projet</span> — une génération complète, de bout
+                        en bout.</p>
+
+                    <div class="button-container">
+                        <a href="https://draftly.app" class="button">Commencer à créer →</a>
+                    </div>
+
+                    <p>Nous sommes impatients que vous testiez cette nouvelle version stable. Nous avons hâte de voir ce
+                        que vous allez créer — que ce soit un dashboard SaaS, une boutique en ligne, un portfolio, ou
+                        quelque chose d'unique.</p>
+
+                    <p>Vos retours nous feront très plaisir !</p>
+
+                    <p style="margin-bottom: 0;">À très vite,<br><span style="color: #60a5fa;">L'équipe Draftly</span>
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <div class="footer">
+            <p>&copy; 2025 Draftly. All rights reserved.</p>
+            <p>
+                <a href="#" style="color: #52525b; text-decoration: underline;">Unsubscribe</a>
+            </p>
+        </div>
+    </div>
+</body>
+
+</html>

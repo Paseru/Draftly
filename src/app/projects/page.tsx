@@ -7,7 +7,7 @@ import { Id } from '../../../convex/_generated/dataModel';
 import { useConvexAuth } from 'convex/react';
 import { ArrowLeft, FolderOpen, Loader2, Trash2, Globe } from 'lucide-react';
 import Link from 'next/link';
-import Image from 'next/image';
+import HtmlPreview from '@/components/HtmlPreview';
 
 function getRelativeTime(timestamp: number): string {
     const now = Date.now();
@@ -135,24 +135,12 @@ export default function ProjectsPage() {
                                 >
                                     {/* Preview */}
                                     <div className="relative w-full aspect-[16/10] bg-[#1a1a1a] overflow-hidden">
-                                        {project.previewImage ? (
-                                            <Image
-                                                src={project.previewImage}
-                                                alt={project.title}
-                                                fill
-                                                unoptimized
-                                                className="object-cover object-top"
-                                                sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
+                                        {(project.previewHtml || project.screens?.[0]?.html) ? (
+                                            <HtmlPreview
+                                                html={project.previewHtml || project.screens?.[0]?.html}
+                                                title={project.title}
+                                                className="absolute inset-0"
                                             />
-                                        ) : project.previewHtml ? (
-                                            <div className="absolute inset-0 origin-top-left scale-[0.2] w-[500%] h-[500%]">
-                                                <iframe
-                                                    srcDoc={project.previewHtml}
-                                                    className="w-full h-full border-0 pointer-events-none"
-                                                    sandbox="allow-same-origin"
-                                                    title={project.title}
-                                                />
-                                            </div>
                                         ) : (
                                             <div className="flex items-center justify-center h-full text-zinc-600 text-xs">
                                                 No preview
