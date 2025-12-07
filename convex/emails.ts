@@ -180,6 +180,8 @@ const ANNOUNCEMENT_HTML = `<!DOCTYPE html>
 
 // =============================================================================
 // ACTION PRINCIPALE : Envoyer l'annonce à TOUS les utilisateurs
+// Utilise le Batch API de Resend pour envoyer jusqu'à 100 emails par requête
+// Rate limit Resend: 2 requêtes/seconde, donc 1 seconde de délai entre batches
 // =============================================================================
 export const sendAnnouncementToAllUsers = action({
     args: {
@@ -212,8 +214,10 @@ export const sendAnnouncementToAllUsers = action({
         }
 
         const SUBJECT = "Your Draftly credits have been reset 🔄";
-        const BATCH_SIZE = 10;
-        const DELAY_MS = 1000;
+        // Resend Batch API permet jusqu'à 100 emails par requête
+        const BATCH_SIZE = 100;
+        // 1 seconde entre chaque batch pour respecter le rate limit (2 req/sec)
+        const DELAY_BETWEEN_BATCHES_MS = 1000;
 
         let successCount = 0;
         let errorCount = 0;
@@ -221,62 +225,321 @@ export const sendAnnouncementToAllUsers = action({
 
         const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
+        // Diviser les emails en batches de 100 maximum
         for (let i = 0; i < emails.length; i += BATCH_SIZE) {
-            const batch = emails.slice(i, i + BATCH_SIZE);
+            const batchEmails = emails.slice(i, i + BATCH_SIZE);
+            const batchNumber = Math.floor(i / BATCH_SIZE) + 1;
+            const totalBatches = Math.ceil(emails.length / BATCH_SIZE);
 
-            const results = await Promise.allSettled(
-                batch.map(async (email) => {
-                    const response = await fetch("https://api.resend.com/emails", {
-                        method: "POST",
-                        headers: {
-                            "Content-Type": "application/json",
-                            "Authorization": "Bearer " + RESEND_API_KEY,
-                        },
-                        body: JSON.stringify({
-                            from: "Draftly <noreply@draftly.live>",
-                            to: email,
-                            subject: SUBJECT,
-                            html: ANNOUNCEMENT_HTML,
-                            reply_to: "support@draftly.live",
-                            headers: {
-                                "List-Unsubscribe": "<mailto:unsubscribe@draftly.live>",
-                            },
-                        }),
+            console.log(`📦 Batch ${batchNumber}/${totalBatches}: Envoi de ${batchEmails.length} emails...`);
+
+            // Préparer les emails pour le Batch API
+            const batchPayload = batchEmails.map((email) => ({
+                from: "Draftly <noreply@draftly.live>",
+                to: email,
+                subject: SUBJECT,
+                html: ANNOUNCEMENT_HTML,
+                reply_to: "support@draftly.live",
+                headers: {
+                    "List-Unsubscribe": "<mailto:unsubscribe@draftly.live>",
+                },
+            }));
+
+            try {
+                // Utiliser l'endpoint Batch de Resend
+                const response = await fetch("https://api.resend.com/emails/batch", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                        "Authorization": "Bearer " + RESEND_API_KEY,
+                    },
+                    body: JSON.stringify(batchPayload),
+                });
+
+                const result = await response.json();
+
+                if (!response.ok) {
+                    // Erreur globale du batch
+                    console.error(`❌ Batch ${batchNumber} failed:`, result);
+                    errorCount += batchEmails.length;
+                    batchEmails.forEach((email) => {
+                        errors.push({
+                            email,
+                            error: JSON.stringify(result),
+                        });
                     });
+                } else {
+                    // Traiter les résultats du batch
+                    // Le Batch API retourne { data: [{id: ...}, ...], errors?: [...] }
+                    const successfulEmails = result.data?.length || 0;
+                    const batchErrors = result.errors || [];
 
-                    if (!response.ok) {
-                        const error = await response.json();
-                        throw new Error(JSON.stringify(error));
+                    successCount += successfulEmails;
+
+                    if (batchErrors.length > 0) {
+                        batchErrors.forEach((err: { index: number; message: string }) => {
+                            errorCount++;
+                            errors.push({
+                                email: batchEmails[err.index] || "unknown",
+                                error: err.message,
+                            });
+                            console.error(`❌ Failed:`, batchEmails[err.index], err.message);
+                        });
                     }
 
-                    return email;
-                })
-            );
-
-            for (let j = 0; j < results.length; j++) {
-                const result = results[j];
-                if (result.status === "fulfilled") {
-                    successCount++;
-                    console.log("✅ Sent to:", result.value);
-                } else {
-                    errorCount++;
-                    errors.push({
-                        email: batch[j],
-                        error: result.reason?.message || "Unknown error",
-                    });
-                    console.error("❌ Failed:", batch[j]);
+                    console.log(`✅ Batch ${batchNumber} terminé: ${successfulEmails} envoyés, ${batchErrors.length} erreurs`);
                 }
+            } catch (fetchError) {
+                // Erreur réseau ou autre
+                console.error(`❌ Batch ${batchNumber} network error:`, fetchError);
+                errorCount += batchEmails.length;
+                batchEmails.forEach((email) => {
+                    errors.push({
+                        email,
+                        error: fetchError instanceof Error ? fetchError.message : "Network error",
+                    });
+                });
             }
 
+            // Attendre avant le prochain batch (sauf pour le dernier)
             if (i + BATCH_SIZE < emails.length) {
-                await sleep(DELAY_MS);
+                console.log(`⏳ Pause de ${DELAY_BETWEEN_BATCHES_MS}ms avant le prochain batch...`);
+                await sleep(DELAY_BETWEEN_BATCHES_MS);
             }
         }
+
+        console.log(`\n🎉 Envoi terminé! ${successCount}/${emails.length} emails envoyés avec succès.`);
 
         return {
             success: true,
             message: "Envoi terminé !",
             totalUsers: emails.length,
+            totalSent: successCount,
+            totalErrors: errorCount,
+            errors: errors.length > 0 ? errors : undefined,
+        };
+    },
+});
+
+// =============================================================================
+// ACTION : Renvoyer l'annonce aux emails qui ont échoué (quota dépassé)
+// Liste des 100 emails du 7 décembre 2024 qui n'ont pas reçu l'email
+// =============================================================================
+export const sendAnnouncementToFailedEmails = action({
+    args: {
+        testMode: v.optional(v.boolean()),
+    },
+    handler: async (ctx, args) => {
+        const RESEND_API_KEY = process.env.RESEND_API_KEY;
+
+        if (!RESEND_API_KEY) {
+            throw new Error("RESEND_API_KEY is not set");
+        }
+
+        // Liste des 100 emails qui n'ont pas reçu l'email le 7 décembre 2024
+        const FAILED_EMAILS = [
+            "karinben77@gmail.com",
+            "alexisturn888@gmail.com",
+            "jeanhenry764@gmail.com",
+            "reisschannel@gmail.com",
+            "kanki.dev@gmail.com",
+            "winforce94450hd@gmail.com",
+            "mxtispro@gmail.com",
+            "samiraouaicha31@gmail.com",
+            "damienk06@gmail.com",
+            "testnewemail111@gmail.com",
+            "glitchgta46@gmail.com",
+            "maxence.fortin53970@gmail.com",
+            "romain.herrenknecht@gmail.com",
+            "samuel310597@gmail.com",
+            "pourpubpourpub322@gmail.com",
+            "ledutir49@gmail.com",
+            "curiosorez@gmail.com",
+            "wil-et-sam@hotmail.fr",
+            "trebotjoffrey@gmail.com",
+            "proxydzz@gmail.com",
+            "network1987@gmail.com",
+            "henocmarc1@gmail.com",
+            "hugonexxion@gmail.com",
+            "arthur@arios.app",
+            "eric.alliaume@greta-nord-alsace.com",
+            "coruhoorhan52@gmail.com",
+            "jk10192000@gmail.com",
+            "angelguillen4@gmail.com",
+            "tlo@volkeno.sn",
+            "jeremy.poulain@gmail.com",
+            "armebeton74@gmail.com",
+            "azadbus78690123@gmail.com",
+            "lucas.friederich@gmail.com",
+            "publicmodedev@gmail.com",
+            "monfraixludovicpro@gmail.com",
+            "fastemail.flyn@gmail.com",
+            "shizusensei7@gmail.com",
+            "alexandre.ribeiro.vazquez@gmail.com",
+            "gintokisakatatv@gmail.com",
+            "belamine78@gmail.com",
+            "gqdthinky@gmail.com",
+            "korb.spams@gmail.com",
+            "contact.hiver.gants@gmail.com",
+            "quatadah.nasdami@gmail.com",
+            "julien@vert-menthe.fr",
+            "mboukhatemwow@gmail.com",
+            "benjamin.mico@gmail.com",
+            "jesuiselouan2@gmail.com",
+            "trimoreauthomas@gmail.com",
+            "joris.brianti@gmail.com",
+            "mehdijchacroune@gmail.com",
+            "marcchapeau@gmail.com",
+            "taibasakho3@gmail.com",
+            "clementenderson281@gmail.com",
+            "maxime.gdn37@gmail.com",
+            "asmrzone00@gmail.com",
+            "johntenao@gmail.com",
+            "rodriguek396@gmail.com",
+            "riad.etm@gmail.com",
+            "albandup1501@gmail.com",
+            "kerian.laurier23@gmail.com",
+            "fabien.vincent44@gmail.com",
+            "johan.her.pro@gmail.com",
+            "jlqueguiner@gladia.io",
+            "ibrahimejunior00@gmail.com",
+            "yfirre@gmail.com",
+            "neonblist@gmail.com",
+            "arik.mkm@gmail.com",
+            "medd.fghl@gmail.com",
+            "alfitori709@gmail.com",
+            "ditharlesa@gmail.com",
+            "jullian.dorian@gmail.com",
+            "galacticspacesheep@gmail.com",
+            "chris.bergont@gmail.com",
+            "auxence@leplein.fr",
+            "yohankoffik@gmail.com",
+            "yohankoffik225@gmail.com",
+            "marek.elmayan@theodo.com",
+            "scolasala99@gmail.com",
+            "tomredf@gmail.com",
+            "tst20549@gmail.com",
+            "saidboda94@gmail.com",
+            "fresnetrenaud@gmail.com",
+            "abdulmucib.ahmetoglu@gmail.com",
+            "flavienhue3a@gmail.com",
+            "webopass.jordan@gmail.com",
+            "zedkah1z1@gmail.com",
+            "afxl667@gmail.com",
+            "mileyvalorant@gmail.com",
+            "mercedev691@gmail.com",
+            "maelcaubere6@gmail.com",
+            "buildnext.fr@gmail.com",
+            "hadjazyanis4@gmail.com",
+            "nextgenaijournal@gmail.com",
+            "raphael.meguellati@gmail.com",
+            "guamsjonathan@gmail.com",
+            "deneuxa@gmail.com",
+            "azerjeremy95@gmail.com",
+            "joshualyguessennd@icloud.com",
+            "eva.meunier122@gmail.com",
+        ];
+
+        if (args.testMode) {
+            return {
+                success: true,
+                testMode: true,
+                message: "Mode test - Voici les emails qui recevraient l'email :",
+                emails: FAILED_EMAILS,
+                totalUsers: FAILED_EMAILS.length,
+            };
+        }
+
+        const SUBJECT = "Your Draftly credits have been reset 🔄";
+        const BATCH_SIZE = 100;
+        const DELAY_BETWEEN_BATCHES_MS = 1000;
+
+        let successCount = 0;
+        let errorCount = 0;
+        const errors: Array<{ email: string; error: string }> = [];
+
+        const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+        console.log(`📧 Envoi aux ${FAILED_EMAILS.length} emails qui ont échoué le 7 décembre...`);
+
+        for (let i = 0; i < FAILED_EMAILS.length; i += BATCH_SIZE) {
+            const batchEmails = FAILED_EMAILS.slice(i, i + BATCH_SIZE);
+            const batchNumber = Math.floor(i / BATCH_SIZE) + 1;
+            const totalBatches = Math.ceil(FAILED_EMAILS.length / BATCH_SIZE);
+
+            console.log(`📦 Batch ${batchNumber}/${totalBatches}: Envoi de ${batchEmails.length} emails...`);
+
+            const batchPayload = batchEmails.map((email) => ({
+                from: "Draftly <noreply@draftly.live>",
+                to: email,
+                subject: SUBJECT,
+                html: ANNOUNCEMENT_HTML,
+                reply_to: "support@draftly.live",
+                headers: {
+                    "List-Unsubscribe": "<mailto:unsubscribe@draftly.live>",
+                },
+            }));
+
+            try {
+                const response = await fetch("https://api.resend.com/emails/batch", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                        "Authorization": "Bearer " + RESEND_API_KEY,
+                    },
+                    body: JSON.stringify(batchPayload),
+                });
+
+                const result = await response.json();
+
+                if (!response.ok) {
+                    console.error(`❌ Batch ${batchNumber} failed:`, result);
+                    errorCount += batchEmails.length;
+                    batchEmails.forEach((email) => {
+                        errors.push({ email, error: JSON.stringify(result) });
+                    });
+                } else {
+                    const successfulEmails = result.data?.length || 0;
+                    const batchErrors = result.errors || [];
+
+                    successCount += successfulEmails;
+
+                    if (batchErrors.length > 0) {
+                        batchErrors.forEach((err: { index: number; message: string }) => {
+                            errorCount++;
+                            errors.push({
+                                email: batchEmails[err.index] || "unknown",
+                                error: err.message,
+                            });
+                            console.error(`❌ Failed:`, batchEmails[err.index], err.message);
+                        });
+                    }
+
+                    console.log(`✅ Batch ${batchNumber} terminé: ${successfulEmails} envoyés, ${batchErrors.length} erreurs`);
+                }
+            } catch (fetchError) {
+                console.error(`❌ Batch ${batchNumber} network error:`, fetchError);
+                errorCount += batchEmails.length;
+                batchEmails.forEach((email) => {
+                    errors.push({
+                        email,
+                        error: fetchError instanceof Error ? fetchError.message : "Network error",
+                    });
+                });
+            }
+
+            if (i + BATCH_SIZE < FAILED_EMAILS.length) {
+                console.log(`⏳ Pause de ${DELAY_BETWEEN_BATCHES_MS}ms...`);
+                await sleep(DELAY_BETWEEN_BATCHES_MS);
+            }
+        }
+
+        console.log(`\n🎉 Envoi terminé! ${successCount}/${FAILED_EMAILS.length} emails envoyés avec succès.`);
+
+        return {
+            success: true,
+            message: "Envoi aux emails en échec terminé !",
+            totalUsers: FAILED_EMAILS.length,
             totalSent: successCount,
             totalErrors: errorCount,
             errors: errors.length > 0 ? errors : undefined,

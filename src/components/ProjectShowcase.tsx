@@ -3,9 +3,11 @@
 import React, { useState } from 'react';
 import { useQuery } from 'convex/react';
 import { api } from '../../convex/_generated/api';
-import { X, Monitor, Smartphone } from 'lucide-react';
+import { X, Monitor, Smartphone, ChevronDown } from 'lucide-react';
 import { StreamingIframe } from './PreviewNode';
 import HtmlPreview from './HtmlPreview';
+
+const INITIAL_DISPLAY_COUNT = 12; // 4x3 grid
 
 function getRelativeTime(timestamp: number): string {
     const now = Date.now();
@@ -30,13 +32,50 @@ type ProjectType = {
     createdAt: number;
 };
 
+// Skeleton Card Component
+function SkeletonCard() {
+    return (
+        <div className="relative bg-[#252526] border border-[#3e3e42] rounded-xl overflow-hidden">
+            {/* Preview skeleton */}
+            <div className="relative w-full aspect-[16/10] bg-[#1a1a1a] overflow-hidden">
+                <div className="absolute inset-0 bg-gradient-to-r from-[#1a1a1a] via-[#2a2a2a] to-[#1a1a1a] animate-shimmer" />
+            </div>
+            {/* Card content skeleton */}
+            <div className="pt-3 px-3 pb-2">
+                <div className="h-3 bg-[#3e3e42] rounded w-3/4 animate-pulse" />
+                <div className="flex items-center justify-between mt-2">
+                    <div className="h-2 bg-[#3e3e42] rounded w-16 animate-pulse" />
+                    <div className="h-2 bg-[#3e3e42] rounded w-12 animate-pulse" />
+                </div>
+            </div>
+        </div>
+    );
+}
+
+// Skeleton Grid Component
+function SkeletonGrid() {
+    return (
+        <section className="w-full -mt-16 pb-12">
+            <div className="max-w-7xl mx-auto px-6">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                    {Array.from({ length: INITIAL_DISPLAY_COUNT }).map((_, index) => (
+                        <SkeletonCard key={index} />
+                    ))}
+                </div>
+            </div>
+        </section>
+    );
+}
+
 export default function ProjectShowcase() {
-    const publicProjects = useQuery(api.projects.getPublicProjects, { limit: 20 });
+    const publicProjects = useQuery(api.projects.getPublicProjects, { limit: 50 });
     const [previewProject, setPreviewProject] = useState<ProjectType | null>(null);
     const [viewMode, setViewMode] = useState<'desktop' | 'mobile'>('desktop');
+    const [showAll, setShowAll] = useState(false);
 
+    // Show skeleton loader while loading
     if (publicProjects === undefined) {
-        return null;
+        return <SkeletonGrid />;
     }
 
     if (publicProjects.length === 0) {
@@ -56,19 +95,34 @@ export default function ProjectShowcase() {
     const previewHtml = previewProject?.previewHtml || previewProject?.screens?.[0]?.html || '';
     const previewLabel = previewProject?.title || 'Preview';
 
+    // Determine which projects to display
+    const displayedProjects = showAll
+        ? publicProjects
+        : publicProjects.slice(0, INITIAL_DISPLAY_COUNT);
+
+    const hasMoreProjects = publicProjects.length > INITIAL_DISPLAY_COUNT;
+    const remainingCount = publicProjects.length - INITIAL_DISPLAY_COUNT;
+
     return (
         <>
             <section className="w-full -mt-16 pb-12">
                 <div className="max-w-7xl mx-auto px-6">
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                        {publicProjects.map((project) => {
+                        {displayedProjects.map((project, index) => {
                             const cardHtml = project.previewHtml || project.screens?.[0]?.html || '';
                             const hasHtml = cardHtml.trim().length > 0;
+                            const isNewlyRevealed = showAll && index >= INITIAL_DISPLAY_COUNT;
+
                             return (
                                 <button
                                     key={project._id}
                                     onClick={(e) => handleCardClick(e, project as ProjectType)}
-                                    className="group relative bg-[#252526] border border-[#3e3e42] rounded-xl overflow-hidden transition-all hover:border-blue-500/30 hover:shadow-lg hover:shadow-blue-500/5 text-left cursor-pointer"
+                                    className={`group relative bg-[#252526] border border-[#3e3e42] rounded-xl overflow-hidden transition-all hover:border-blue-500/30 hover:shadow-lg hover:shadow-blue-500/5 text-left cursor-pointer ${isNewlyRevealed ? 'animate-fadeInUp' : ''
+                                        }`}
+                                    style={isNewlyRevealed ? {
+                                        animationDelay: `${(index - INITIAL_DISPLAY_COUNT) * 50}ms`,
+                                        animationFillMode: 'backwards'
+                                    } : undefined}
                                 >
                                     {/* Preview */}
                                     <div className="relative w-full aspect-[16/10] bg-[#1a1a1a] overflow-hidden">
@@ -108,6 +162,22 @@ export default function ProjectShowcase() {
                             );
                         })}
                     </div>
+
+                    {/* Show More Button */}
+                    {hasMoreProjects && !showAll && (
+                        <div className="flex justify-center mt-8">
+                            <button
+                                onClick={() => setShowAll(true)}
+                                className="group flex items-center gap-2 px-6 py-3 bg-[#252526] border border-[#3e3e42] rounded-full text-sm font-medium text-zinc-300 hover:text-white hover:border-blue-500/50 hover:bg-[#2a2a2a] transition-all duration-300 cursor-pointer"
+                            >
+                                <span>Show {remainingCount} more</span>
+                                <ChevronDown
+                                    size={18}
+                                    className="transition-transform duration-300 group-hover:translate-y-0.5"
+                                />
+                            </button>
+                        </div>
+                    )}
                 </div>
             </section>
 

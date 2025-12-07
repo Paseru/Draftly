@@ -84,4 +84,10 @@ export default defineSchema({
         .index("by_user", ["userId"])
         .index("by_created", ["userId", "createdAt"])
         .index("by_public", ["isPublic", "createdAt"]),
+
+    // Changelog table for "What's New" feature
+    changelog: defineTable({
+        date: v.number(),      // Timestamp of publication
+        content: v.string(),   // Markdown content
+    }).index("by_date", ["date"]),
 });
