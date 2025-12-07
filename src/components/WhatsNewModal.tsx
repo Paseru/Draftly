@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, ArrowRight } from 'lucide-react';
 import { useQuery } from 'convex/react';
@@ -84,14 +84,14 @@ function renderMarkdown(content: string): React.ReactNode {
 
 export default function WhatsNewModal() {
     const [isOpen, setIsOpen] = useState(false);
-    const [hasChecked, setHasChecked] = useState(false);
+    const hasCheckedRef = useRef(false);
     const latestChangelog = useQuery(api.changelog.getLatestChangelog);
 
     useEffect(() => {
         // Only check once and when we have the changelog data
-        if (hasChecked || latestChangelog === undefined) return;
+        if (hasCheckedRef.current || latestChangelog === undefined) return;
 
-        setHasChecked(true);
+        hasCheckedRef.current = true;
 
         if (!latestChangelog) {
             // No changelog exists yet
@@ -102,10 +102,10 @@ export default function WhatsNewModal() {
         const lastSeenId = localStorage.getItem(STORAGE_KEY);
 
         if (lastSeenId !== latestChangelog._id) {
-            // New changelog available, show modal
-            setIsOpen(true);
+            // New changelog available, show modal (async to avoid cascading renders)
+            queueMicrotask(() => setIsOpen(true));
         }
-    }, [latestChangelog, hasChecked]);
+    }, [latestChangelog]);
 
     const handleClose = () => {
         if (latestChangelog) {
