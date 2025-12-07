@@ -19,12 +19,19 @@ if (!inlineCredentials && !process.env.GOOGLE_APPLICATION_CREDENTIALS) {
 // Parse inline credentials if available
 let parsedCredentials: Record<string, unknown> | null = null;
 if (inlineCredentials) {
+  console.log("[Vertex] GOOGLE_SERVICE_ACCOUNT_KEY found, length:", inlineCredentials.length);
+  console.log("[Vertex] First 50 chars:", inlineCredentials.substring(0, 50));
   try {
     parsedCredentials = JSON.parse(inlineCredentials);
-    console.log("[Vertex] Using inline credentials from GOOGLE_SERVICE_ACCOUNT_KEY");
+    console.log("[Vertex] ✅ Credentials parsed successfully");
+    console.log("[Vertex] Project ID:", parsedCredentials?.project_id);
+    console.log("[Vertex] Client email:", parsedCredentials?.client_email);
   } catch (e) {
-    console.error("[Vertex] Failed to parse GOOGLE_SERVICE_ACCOUNT_KEY:", e);
+    console.error("[Vertex] ❌ Failed to parse GOOGLE_SERVICE_ACCOUNT_KEY:", e);
+    console.error("[Vertex] Raw value (first 100 chars):", inlineCredentials.substring(0, 100));
   }
+} else {
+  console.log("[Vertex] No GOOGLE_SERVICE_ACCOUNT_KEY found, using keyFile:", credentialsPath);
 }
 
 export function buildVertexConfig(model: string) {
