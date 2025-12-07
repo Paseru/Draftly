@@ -65,46 +65,46 @@ export default function ProjectShowcase() {
                             const cardHtml = project.previewHtml || project.screens?.[0]?.html || '';
                             const hasHtml = cardHtml.trim().length > 0;
                             return (
-                            <button
-                                key={project._id}
-                                onClick={(e) => handleCardClick(e, project as ProjectType)}
-                                className="group relative bg-[#252526] border border-[#3e3e42] rounded-xl overflow-hidden transition-all hover:border-blue-500/30 hover:shadow-lg hover:shadow-blue-500/5 text-left cursor-pointer"
-                            >
-                                {/* Preview */}
-                                <div className="relative w-full aspect-[16/10] bg-[#1a1a1a] overflow-hidden">
-                                    {hasHtml ? (
-                                        <HtmlPreview
-                                            html={cardHtml}
-                                            title={project.title}
-                                            className="absolute inset-0"
-                                        />
-                                    ) : (
-                                        <div className="flex items-center justify-center h-full text-zinc-600 text-xs">
-                                            No preview
+                                <button
+                                    key={project._id}
+                                    onClick={(e) => handleCardClick(e, project as ProjectType)}
+                                    className="group relative bg-[#252526] border border-[#3e3e42] rounded-xl overflow-hidden transition-all hover:border-blue-500/30 hover:shadow-lg hover:shadow-blue-500/5 text-left cursor-pointer"
+                                >
+                                    {/* Preview */}
+                                    <div className="relative w-full aspect-[16/10] bg-[#1a1a1a] overflow-hidden">
+                                        {hasHtml ? (
+                                            <HtmlPreview
+                                                html={cardHtml}
+                                                title={project.title}
+                                                className="absolute inset-0"
+                                            />
+                                        ) : (
+                                            <div className="flex items-center justify-center h-full text-zinc-600 text-xs">
+                                                No preview
+                                            </div>
+                                        )}
+
+                                        {/* Hover overlay */}
+                                        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-end justify-center pb-3">
+                                            <span className="text-xs text-white font-medium">Preview</span>
                                         </div>
-                                    )}
-
-                                    {/* Hover overlay */}
-                                    <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-end justify-center pb-3">
-                                        <span className="text-xs text-white font-medium">Preview</span>
                                     </div>
-                                </div>
 
-                                {/* Card content */}
-                                <div className="pt-3 px-3 pb-2">
-                                    <h3 className="text-xs font-medium text-zinc-100 truncate">
-                                        {project.title}
-                                    </h3>
-                                    <div className="flex items-center justify-between mt-2">
-                                        <span className="text-[10px] text-zinc-500">
-                                            {project.authorName || 'Anonymous'}
-                                        </span>
-                                        <span className="text-[10px] text-zinc-500">
-                                            {getRelativeTime(project.createdAt)}
-                                        </span>
+                                    {/* Card content */}
+                                    <div className="pt-3 px-3 pb-2">
+                                        <h3 className="text-xs font-medium text-zinc-100 truncate">
+                                            {project.title}
+                                        </h3>
+                                        <div className="flex items-center justify-between mt-2">
+                                            <span className="text-[10px] text-zinc-500">
+                                                {project.authorName || 'Anonymous'}
+                                            </span>
+                                            <span className="text-[10px] text-zinc-500">
+                                                {getRelativeTime(project.createdAt)}
+                                            </span>
+                                        </div>
                                     </div>
-                                </div>
-                            </button>
+                                </button>
                             );
                         })}
                     </div>
@@ -123,7 +123,7 @@ export default function ProjectShowcase() {
                     </button>
 
                     {viewMode === 'mobile' ? (
-                        <div className="relative scale-[0.68] sm:scale-[0.8] transition-transform duration-300">
+                        <div className="absolute bottom-[3%] left-1/2 -translate-x-1/2 scale-[0.75] sm:scale-[0.88] transition-transform duration-300 origin-bottom">
                             <div
                                 style={{ width: 430, height: 932 }}
                                 className="relative bg-black rounded-[60px] shadow-[0_0_80px_-20px_rgba(0,0,0,0.5)] border-[12px] border-[#1a1a1a] ring-1 ring-[#333] overflow-hidden select-none flex flex-col"
@@ -163,7 +163,11 @@ export default function ProjectShowcase() {
                             </div>
                         </div>
                     ) : (
-                        <div className="bg-[#1e1e1e] w-[80%] h-[80%] rounded-xl border border-[#3e3e42] shadow-2xl flex flex-col overflow-hidden ring-1 ring-white/10">
+                        /* Desktop preview: 95% size, bottom aligned, centered */
+                        <div
+                            className="bg-[#1e1e1e] rounded-xl border border-[#3e3e42] shadow-2xl flex flex-col overflow-hidden ring-1 ring-white/10 absolute bottom-[2.5%] left-1/2 -translate-x-1/2"
+                            style={{ height: 'calc((100vh - 80px) * 0.95)', width: '95%' }}
+                        >
                             <div className="h-auto min-h-9 py-2 bg-[#252526] border-b border-[#3e3e42] flex items-center px-3">
                                 <div className="flex items-center gap-3 flex-wrap">
                                     <div className="flex gap-1.5 shrink-0">

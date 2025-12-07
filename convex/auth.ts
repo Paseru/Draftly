@@ -23,4 +23,21 @@ export const { auth, signIn, signOut, store, isAuthenticated } = convexAuth({
       clientSecret: googleClientSecret,
     }),
   ],
+  callbacks: {
+    async createOrUpdateUser(ctx, args) {
+      // If user already exists, just return their ID (no changes needed)
+      if (args.existingUserId) {
+        return args.existingUserId;
+      }
+
+      // New user - create with initialized free trial values
+      return ctx.db.insert("users", {
+        ...args.profile,
+        // Initialize free trial: 1 generation remaining
+        remainingGenerations: 1,
+        hasUsedFreeTrial: false,
+        generationsUsed: 0,
+      });
+    },
+  },
 });

@@ -2137,8 +2137,17 @@ export default function Home() {
 
                         {/* Showcase Toggle Block - only for newly created projects, not loaded ones */}
                         {msg.completionMessage && savedProjectId && !loadedProjectId && (
-                          <div className="mt-2">
+                          <div className="mt-2 space-y-2">
                             <ShowcaseToggleBlock projectId={savedProjectId} initialIsPublic={true} />
+
+                            {/* Start New Project Button */}
+                            <button
+                              onClick={handleReset}
+                              className="w-full bg-[#1e1e1e] rounded-xl border border-[#27272a] overflow-hidden px-4 py-3 flex items-center justify-center gap-2 hover:bg-white/5 transition-colors cursor-pointer"
+                            >
+                              <RotateCcw size={14} className="text-blue-400" />
+                              <span className="text-xs font-medium text-zinc-300">Start New Project</span>
+                            </button>
                           </div>
                         )}
 
