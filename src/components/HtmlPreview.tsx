@@ -20,15 +20,15 @@ const HtmlPreview: React.FC<HtmlPreviewProps> = ({ html = '', title, scale = 0.2
   const [isInView, setIsInView] = useState(false);
   const [shouldRenderFrame, setShouldRenderFrame] = useState(false);
 
+  const isIntersectionObserverAvailable =
+    typeof window !== 'undefined' && typeof IntersectionObserver !== 'undefined';
+
   // Detect when the preview enters the viewport (with generous margin)
   useEffect(() => {
+    if (!isIntersectionObserverAvailable) return;
+
     const el = containerRef.current;
     if (!el) return;
-
-    if (typeof IntersectionObserver === 'undefined') {
-      setIsInView(true);
-      return;
-    }
 
     const observer = new IntersectionObserver(
       (entries) => {
@@ -44,22 +44,31 @@ const HtmlPreview: React.FC<HtmlPreviewProps> = ({ html = '', title, scale = 0.2
 
     observer.observe(el);
     return () => observer.disconnect();
-  }, []);
+  }, [isIntersectionObserverAvailable]);
 
   // Defer iframe rendering until the browser is idle to reduce main-thread contention
   useEffect(() => {
-    if (!isInView || shouldRenderFrame) return;
+    const effectiveInView = isIntersectionObserverAvailable ? isInView : true;
+    if (!effectiveInView || shouldRenderFrame) return;
 
     let canceled = false;
     const onIdle = () => {
       if (!canceled) setShouldRenderFrame(true);
     };
 
-    // requestIdleCallback is not typed on Window in TS DOM lib
-    const requestIdle = (window as any).requestIdleCallback as
-      | ((cb: () => void, opts?: { timeout?: number }) => number)
-      | undefined;
-    const cancelIdle = (window as any).cancelIdleCallback as ((id: number) => void) | undefined;
+    // requestIdleCallback is optional; bind if available so we avoid an `any` cast
+    const requestIdle = typeof window !== 'undefined'
+      ? (window as Window & {
+          requestIdleCallback?: (cb: IdleRequestCallback, opts?: { timeout?: number }) => number;
+          cancelIdleCallback?: (handle: number) => void;
+        }).requestIdleCallback
+      : undefined;
+    const cancelIdle = typeof window !== 'undefined'
+      ? (window as Window & {
+          requestIdleCallback?: (cb: IdleRequestCallback, opts?: { timeout?: number }) => number;
+          cancelIdleCallback?: (handle: number) => void;
+        }).cancelIdleCallback
+      : undefined;
 
     if (typeof requestIdle === 'function') {
       const id = requestIdle(onIdle, { timeout: 150 });
@@ -74,7 +83,7 @@ const HtmlPreview: React.FC<HtmlPreviewProps> = ({ html = '', title, scale = 0.2
       canceled = true;
       window.clearTimeout(timeoutId);
     };
-  }, [isInView, shouldRenderFrame]);
+  }, [isInView, shouldRenderFrame, isIntersectionObserverAvailable]);
 
   const hasHtml = !!html && html.trim().length > 0;
   const outerClass = className ? `relative w-full h-full ${className}` : 'relative w-full h-full';
