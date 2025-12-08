@@ -131,8 +131,11 @@ export default function Home() {
   // Queue system for rate limiting
   const [isQueueModalOpen, setIsQueueModalOpen] = useState(false);
   const queueEntryIdRef = useRef<Id<"generationQueue"> | null>(null);
+  const pendingQueuePayloadRef = useRef<{ payload: Record<string, unknown>; isDesignPhase: boolean } | null>(null);
+  const queuePollIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const queuePosition = useQuery(api.queue.checkPosition);
   const joinQueue = useMutation(api.queue.joinQueue);
+  const tryAcquireSlot = useMutation(api.queue.tryAcquireSlot);
   const releaseSlot = useMutation(api.queue.releaseSlot);
   const leaveQueue = useMutation(api.queue.leaveQueue);
 
@@ -221,6 +224,15 @@ export default function Home() {
       setIsQueueModalOpen(false);
     }
   }, [queuePosition, isQueueModalOpen]);
+
+  const clearQueuePolling = useCallback(() => {
+    if (queuePollIntervalRef.current) {
+      clearInterval(queuePollIntervalRef.current);
+      queuePollIntervalRef.current = null;
+    }
+  }, []);
+
+  useEffect(() => clearQueuePolling, [clearQueuePolling]);
 
   // Persist pending prompt to localStorage before OAuth redirect
   useEffect(() => {
@@ -700,27 +712,54 @@ export default function Home() {
     messagesRef.current = messages;
   }, [messages]);
 
-  const runGeneration = useCallback(async (payload: Record<string, unknown>, isDesignPhase = false) => {
+  const runGeneration = useCallback(async (
+    payload: Record<string, unknown>,
+    isDesignPhase = false,
+    options?: { skipQueue?: boolean }
+  ) => {
     if (isLoading) return;
 
     // Try to acquire a generation slot (queue system for rate limiting)
-    try {
-      const queueResult = await joinQueue();
-      queueEntryIdRef.current = queueResult.entryId;
+    if (!options?.skipQueue) {
+      try {
+        const queueResult = await joinQueue();
+        queueEntryIdRef.current = queueResult.entryId;
 
-      if (queueResult.status === 'waiting') {
-        // User is in queue, show modal and wait
-        console.log('[Queue] User is in queue at position', queueResult.position);
-        setIsQueueModalOpen(true);
-        // Don't proceed - the generation will be triggered when slot becomes available
-        // via the queuePosition subscription
-        return;
+        if (queueResult.status === 'waiting') {
+          // User is in queue, show modal and start polling for a free slot
+          console.log('[Queue] User is in queue at position', queueResult.position);
+          setIsQueueModalOpen(true);
+          pendingQueuePayloadRef.current = { payload, isDesignPhase };
+
+          // Clear any previous polling loop before starting a new one
+          clearQueuePolling();
+
+          queuePollIntervalRef.current = setInterval(async () => {
+            try {
+              const result = await tryAcquireSlot({ entryId: queueResult.entryId });
+              if (result.success && result.status === 'active') {
+                console.log('[Queue] Slot acquired after waiting');
+                clearQueuePolling();
+                setIsQueueModalOpen(false);
+                const pending = pendingQueuePayloadRef.current;
+                pendingQueuePayloadRef.current = null;
+                if (pending) {
+                  await runGeneration(pending.payload, pending.isDesignPhase, { skipQueue: true });
+                }
+              }
+            } catch (pollErr) {
+              console.error('[Queue] Failed to acquire slot while waiting:', pollErr);
+            }
+          }, 3000);
+
+          return;
+        }
+
+        console.log('[Queue] Slot acquired immediately');
+      } catch (err) {
+        console.error('[Queue] Failed to join queue:', err);
+        // Proceed without queue (fallback for unauthenticated users or errors)
       }
-
-      console.log('[Queue] Slot acquired immediately');
-    } catch (err) {
-      console.error('[Queue] Failed to join queue:', err);
-      // Proceed without queue (fallback for unauthenticated users or errors)
     }
 
     setIsLoading(true);
@@ -1295,6 +1334,8 @@ export default function Home() {
     incrementGenerationsUsed,
     isLoading,
     joinQueue,
+    clearQueuePolling,
+    tryAcquireSlot,
     releaseSlot,
     setHasStarted,
     setIsLoading,
@@ -2615,11 +2656,13 @@ export default function Home() {
         position={queuePosition?.status === 'waiting' ? queuePosition.position : 0}
         activeSlots={queuePosition?.status === 'waiting' ? queuePosition.activeSlots : 5}
         maxSlots={queuePosition?.status === 'waiting' ? queuePosition.maxSlots : 5}
-        onCancel={async () => {
-          setIsQueueModalOpen(false);
-          try {
-            await leaveQueue();
-            queueEntryIdRef.current = null;
+          onCancel={async () => {
+            setIsQueueModalOpen(false);
+            clearQueuePolling();
+            pendingQueuePayloadRef.current = null;
+            try {
+              await leaveQueue();
+              queueEntryIdRef.current = null;
             console.log('[Queue] Left queue');
           } catch (err) {
             console.error('[Queue] Failed to leave queue:', err);
