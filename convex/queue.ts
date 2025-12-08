@@ -8,7 +8,7 @@ import { Id } from "./_generated/dataModel";
 // ============================================================================
 
 /** Maximum number of concurrent generations allowed */
-const MAX_CONCURRENT_SLOTS = 5;
+const MAX_CONCURRENT_SLOTS = 4;
 
 /** Time after which an active slot is considered abandoned (5 minutes) */
 const SLOT_TIMEOUT_MS = 5 * 60 * 1000;
