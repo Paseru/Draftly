@@ -234,6 +234,26 @@ export default function Home() {
 
   useEffect(() => clearQueuePolling, [clearQueuePolling]);
 
+  // Best-effort: when the tab is closed or navigated away, leave the queue to free the slot quickly
+  useEffect(() => {
+    const handlePageHide = () => {
+      if (queueEntryIdRef.current || queuePosition?.status === 'waiting' || queuePosition?.status === 'active') {
+        leaveQueue().catch(err => console.error('[Queue] Failed to leave queue on unload:', err));
+        clearQueuePolling();
+        pendingQueuePayloadRef.current = null;
+        queueEntryIdRef.current = null;
+      }
+    };
+
+    window.addEventListener('pagehide', handlePageHide);
+    window.addEventListener('beforeunload', handlePageHide);
+
+    return () => {
+      window.removeEventListener('pagehide', handlePageHide);
+      window.removeEventListener('beforeunload', handlePageHide);
+    };
+  }, [leaveQueue, queuePosition?.status, clearQueuePolling]);
+
   // Persist pending prompt to localStorage before OAuth redirect
   useEffect(() => {
     if (pendingPrompt) {
@@ -2654,8 +2674,8 @@ export default function Home() {
       <QueueWaitlistModal
         isOpen={isQueueModalOpen}
         position={queuePosition?.status === 'waiting' ? queuePosition.position : 0}
-        activeSlots={queuePosition?.status === 'waiting' ? queuePosition.activeSlots : 5}
-        maxSlots={queuePosition?.status === 'waiting' ? queuePosition.maxSlots : 5}
+        activeSlots={queuePosition?.status === 'waiting' ? queuePosition.activeSlots : 1}
+        maxSlots={queuePosition?.status === 'waiting' ? queuePosition.maxSlots : 1}
           onCancel={async () => {
             setIsQueueModalOpen(false);
             clearQueuePolling();

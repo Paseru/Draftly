@@ -14,8 +14,8 @@ interface QueueWaitlistModalProps {
 export default function QueueWaitlistModal({
     isOpen,
     position,
-    activeSlots = 5,
-    maxSlots = 5,
+    activeSlots = 1,
+    maxSlots = 1,
     onCancel
 }: QueueWaitlistModalProps) {
     const [dots, setDots] = useState('');
