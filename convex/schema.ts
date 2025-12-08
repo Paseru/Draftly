@@ -90,4 +90,20 @@ export default defineSchema({
         date: v.number(),      // Timestamp of publication
         content: v.string(),   // Markdown content
     }).index("by_date", ["date"]),
+
+    // Generation queue for rate limiting (Vertex AI 429 handling)
+    generationQueue: defineTable({
+        userId: v.id("users"),
+        status: v.union(
+            v.literal("waiting"),   // In queue, waiting for slot
+            v.literal("active"),    // Has slot, currently generating
+            v.literal("completed")  // Done, can be cleaned up
+        ),
+        slotAcquiredAt: v.optional(v.number()),  // When slot was claimed
+        createdAt: v.number(),
+        updatedAt: v.number(),
+    })
+        .index("by_userId", ["userId"])
+        .index("by_status", ["status"])
+        .index("by_status_createdAt", ["status", "createdAt"]),
 });

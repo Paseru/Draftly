@@ -2,7 +2,7 @@ import path from "path";
 import fs from "fs";
 import os from "os";
 
-const defaultLocation = process.env.VERTEXAI_LOCATION || "europe-central2";
+const defaultLocation = process.env.VERTEXAI_LOCATION || "us-central1";
 const defaultProject = process.env.VERTEXAI_PROJECT || "gen-lang-client-0009771189";
 
 // Check if we have inline credentials (for production/Railway)

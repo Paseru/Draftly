@@ -32,6 +32,7 @@ import OverloadModal from '@/components/OverloadModal';
 import SubscriptionModal from '@/components/SubscriptionModal';
 import LoginModal from '@/components/LoginModal';
 import StallWarningModal from '@/components/StallWarningModal';
+import QueueWaitlistModal from '@/components/QueueWaitlistModal';
 import { useConvexAuth, useQuery, useMutation } from 'convex/react';
 import { useAuthActions } from '@convex-dev/auth/react';
 import { api } from '../../convex/_generated/api';
@@ -111,7 +112,9 @@ export default function Home() {
   const { signOut } = useAuthActions();
 
   // Check if user has an active subscription
-  const hasActiveSubscription = useQuery(api.stripe.hasActiveSubscription) ?? false;
+  const hasActiveSubscriptionQuery = useQuery(api.stripe.hasActiveSubscription);
+  const hasActiveSubscription = hasActiveSubscriptionQuery ?? false;
+  const isSubscriptionLoading = hasActiveSubscriptionQuery === undefined;
 
   // Check if user has already used their free trial (stored in Convex)
   const currentUser = useQuery(api.users.getCurrentUser);
@@ -124,6 +127,14 @@ export default function Home() {
 
   // Get remaining generations for the user
   const generationsData = useQuery(api.users.getGenerationsRemaining);
+
+  // Queue system for rate limiting
+  const [isQueueModalOpen, setIsQueueModalOpen] = useState(false);
+  const queueEntryIdRef = useRef<Id<"generationQueue"> | null>(null);
+  const queuePosition = useQuery(api.queue.checkPosition);
+  const joinQueue = useMutation(api.queue.joinQueue);
+  const releaseSlot = useMutation(api.queue.releaseSlot);
+  const leaveQueue = useMutation(api.queue.leaveQueue);
 
   // Load project from URL if present
   const loadedProject = useQuery(
@@ -202,6 +213,14 @@ export default function Home() {
       lastChunkTimestampRef.current.clear();
     }
   }, [isLoading, nodes]);
+
+  // Queue position monitoring - auto-dismiss modal when slot is acquired
+  useEffect(() => {
+    if (queuePosition?.status === 'active' && isQueueModalOpen) {
+      console.log('[Queue] Slot acquired, dismissing modal');
+      setIsQueueModalOpen(false);
+    }
+  }, [queuePosition, isQueueModalOpen]);
 
   // Persist pending prompt to localStorage before OAuth redirect
   useEffect(() => {
@@ -295,6 +314,8 @@ export default function Home() {
 
   // State to trigger generation after OAuth redirect
   const [resumePrompt, setResumePrompt] = useState<string | null>(null);
+  // Ref to track if we already processed OAuth return (prevents double trigger)
+  const oauthReturnProcessedRef = useRef(false);
 
   // Debug: Log localStorage state on mount
   useEffect(() => {
@@ -304,7 +325,7 @@ export default function Home() {
 
   // Resume generation after OAuth login redirect
   useEffect(() => {
-    console.log('[OAuth Debug] Auth state changed - isAuthenticated:', isAuthenticated, 'isAuthLoading:', isAuthLoading);
+    console.log('[OAuth Debug] Auth state changed - isAuthenticated:', isAuthenticated, 'isAuthLoading:', isAuthLoading, 'isSubscriptionLoading:', isSubscriptionLoading);
 
     // Don't do anything while auth is loading
     if (isAuthLoading) {
@@ -312,9 +333,21 @@ export default function Home() {
       return;
     }
 
+    // Wait for subscription status to be loaded before making decisions
+    if (isSubscriptionLoading) {
+      console.log('[OAuth Debug] Subscription status still loading, waiting...');
+      return;
+    }
+
     // Skip if we already processed a Stripe return (prevents double trigger)
     if (stripeReturnProcessedRef.current) {
       console.log('[OAuth Debug] Stripe return already processed, skipping OAuth handler');
+      return;
+    }
+
+    // Skip if we already processed OAuth return (prevents double trigger)
+    if (oauthReturnProcessedRef.current) {
+      console.log('[OAuth Debug] OAuth return already processed, skipping');
       return;
     }
 
@@ -335,6 +368,7 @@ export default function Home() {
         // to trigger the subscription resume flow
         if (hasActiveSubscription) {
           console.log('[OAuth Debug] User has active subscription, triggering subscription resume flow');
+          oauthReturnProcessedRef.current = true;
           localStorage.removeItem('pendingPrompt');
           localStorage.removeItem('pendingPromptSource');
           setResumeAfterSubscription(savedPrompt);
@@ -344,18 +378,21 @@ export default function Home() {
           const promptSource = localStorage.getItem('pendingPromptSource');
           if (promptSource === 'stripe') {
             console.log('[OAuth Debug] Prompt was saved by paywall, not resuming (user needs subscription)');
+            // Mark as processed to prevent re-triggering
+            oauthReturnProcessedRef.current = true;
             // Don't resume - user came back without completing Stripe checkout
             // They may have closed the tab or the browser
           } else {
             // Normal OAuth flow - user just logged in for the first time
-            localStorage.removeItem('pendingPrompt');
             console.log('[OAuth Debug] Setting resumePrompt:', savedPrompt);
+            oauthReturnProcessedRef.current = true;
+            localStorage.removeItem('pendingPrompt');
             setResumePrompt(savedPrompt);
           }
         }
       }
     }
-  }, [isAuthenticated, isAuthLoading, hasActiveSubscription, resumeAfterSubscription]);
+  }, [isAuthenticated, isAuthLoading, isSubscriptionLoading, hasActiveSubscription, resumeAfterSubscription]);
 
   const generateDesignSystemInBackground = async (html: string) => {
     try {
@@ -665,6 +702,26 @@ export default function Home() {
 
   const runGeneration = useCallback(async (payload: Record<string, unknown>, isDesignPhase = false) => {
     if (isLoading) return;
+
+    // Try to acquire a generation slot (queue system for rate limiting)
+    try {
+      const queueResult = await joinQueue();
+      queueEntryIdRef.current = queueResult.entryId;
+
+      if (queueResult.status === 'waiting') {
+        // User is in queue, show modal and wait
+        console.log('[Queue] User is in queue at position', queueResult.position);
+        setIsQueueModalOpen(true);
+        // Don't proceed - the generation will be triggered when slot becomes available
+        // via the queuePosition subscription
+        return;
+      }
+
+      console.log('[Queue] Slot acquired immediately');
+    } catch (err) {
+      console.error('[Queue] Failed to join queue:', err);
+      // Proceed without queue (fallback for unauthenticated users or errors)
+    }
 
     setIsLoading(true);
     setHasStarted(true);
@@ -1220,12 +1277,25 @@ export default function Home() {
     } finally {
       setIsLoading(false);
       abortControllerRef.current = null;
+
+      // Release the queue slot
+      if (queueEntryIdRef.current) {
+        try {
+          await releaseSlot({ entryId: queueEntryIdRef.current });
+          console.log('[Queue] Slot released');
+        } catch (err) {
+          console.error('[Queue] Failed to release slot:', err);
+        }
+        queueEntryIdRef.current = null;
+      }
     }
   }, [
     createProject,
     ensureDesignSystemMarkdown,
     incrementGenerationsUsed,
     isLoading,
+    joinQueue,
+    releaseSlot,
     setHasStarted,
     setIsLoading,
     setIsOverloadModalOpen,
@@ -2538,6 +2608,23 @@ export default function Home() {
       <OverloadModal
         isOpen={isOverloadModalOpen}
         onClose={() => setIsOverloadModalOpen(false)}
+      />
+
+      <QueueWaitlistModal
+        isOpen={isQueueModalOpen}
+        position={queuePosition?.status === 'waiting' ? queuePosition.position : 0}
+        activeSlots={queuePosition?.status === 'waiting' ? queuePosition.activeSlots : 5}
+        maxSlots={queuePosition?.status === 'waiting' ? queuePosition.maxSlots : 5}
+        onCancel={async () => {
+          setIsQueueModalOpen(false);
+          try {
+            await leaveQueue();
+            queueEntryIdRef.current = null;
+            console.log('[Queue] Left queue');
+          } catch (err) {
+            console.error('[Queue] Failed to leave queue:', err);
+          }
+        }}
       />
 
       <SubscriptionModal
