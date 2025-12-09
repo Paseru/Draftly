@@ -22,7 +22,7 @@ type Props = {
 };
 
 const COLUMNS = 4;
-const ROW_HEIGHT = 200; // Card height with aspect-ratio 16/10 + content + gap
+const ROW_HEIGHT = 230; // Card height: aspect-ratio 16/10 (~175px) + content (~40px) + gap (16px)
 const OVERSCAN = 2;
 
 function getRelativeTime(timestamp: number): string {
@@ -147,7 +147,7 @@ export default function VirtualizedProjectGrid({
                                 transform: `translateY(${virtualRow.start}px)`,
                             }}
                         >
-                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 h-full pb-4">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 pb-4">
                                 {rowProjects.map((project) => (
                                     <ProjectCard
                                         key={project._id}
