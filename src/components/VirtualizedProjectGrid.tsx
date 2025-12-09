@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useRef, useEffect, useCallback } from 'react';
-import { useVirtualizer } from '@tanstack/react-virtual';
+import React, { useEffect } from 'react';
+import { useWindowVirtualizer } from '@tanstack/react-virtual';
 import HtmlPreview from './HtmlPreview';
 
 type ProjectType = {
@@ -22,7 +22,7 @@ type Props = {
 };
 
 const COLUMNS = 4;
-const ROW_HEIGHT = 200; // Card height with aspect-ratio 16/10 + content
+const ROW_HEIGHT = 200; // Card height with aspect-ratio 16/10 + content + gap
 const OVERSCAN = 2;
 
 function getRelativeTime(timestamp: number): string {
@@ -99,17 +99,14 @@ export default function VirtualizedProjectGrid({
     canLoadMore,
     isLoadingMore,
 }: Props) {
-    const parentRef = useRef<HTMLDivElement>(null);
-
     // Group projects into rows of COLUMNS
     const rows: ProjectType[][] = [];
     for (let i = 0; i < projects.length; i += COLUMNS) {
         rows.push(projects.slice(i, i + COLUMNS));
     }
 
-    const virtualizer = useVirtualizer({
+    const virtualizer = useWindowVirtualizer({
         count: rows.length,
-        getScrollElement: () => parentRef.current,
         estimateSize: () => ROW_HEIGHT,
         overscan: OVERSCAN,
     });
@@ -128,11 +125,7 @@ export default function VirtualizedProjectGrid({
     }, [virtualRows, rows.length, canLoadMore, isLoadingMore, onLoadMore]);
 
     return (
-        <div
-            ref={parentRef}
-            className="h-[600px] overflow-auto px-6"
-            style={{ contain: 'strict' }}
-        >
+        <div className="px-6">
             <div
                 style={{
                     height: `${virtualizer.getTotalSize()}px`,
@@ -154,7 +147,7 @@ export default function VirtualizedProjectGrid({
                                 transform: `translateY(${virtualRow.start}px)`,
                             }}
                         >
-                            <div className="grid grid-cols-4 gap-4 h-full pb-4">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 h-full pb-4">
                                 {rowProjects.map((project) => (
                                     <ProjectCard
                                         key={project._id}
