@@ -1,10 +1,9 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { X, Monitor, Smartphone, ChevronLeft, ChevronRight } from 'lucide-react';
 import { StreamingIframe } from './PreviewNode';
 import HtmlPreview from './HtmlPreview';
-import VirtualizedProjectGrid from './VirtualizedProjectGrid';
 import { usePaginatedProjects } from '../hooks/usePaginatedProjects';
 
 const INITIAL_DISPLAY_COUNT = 12; // 4x3 grid
@@ -188,6 +187,29 @@ export default function ProjectShowcase() {
     const [showAll, setShowAll] = useState(false);
     const isMobile = useIsMobile();
 
+    // Ref for infinite scroll sentinel
+    const loadMoreRef = useRef<HTMLDivElement>(null);
+
+    // IntersectionObserver for infinite scroll
+    useEffect(() => {
+        if (!showAll || !canLoadMore || isLoadingMore) return;
+
+        const observer = new IntersectionObserver(
+            (entries) => {
+                if (entries[0].isIntersecting) {
+                    loadMore();
+                }
+            },
+            { threshold: 0.1 }
+        );
+
+        if (loadMoreRef.current) {
+            observer.observe(loadMoreRef.current);
+        }
+
+        return () => observer.disconnect();
+    }, [showAll, canLoadMore, isLoadingMore, loadMore]);
+
     // Show skeleton loader while loading
     if (isLoading) {
         return <SkeletonGrid />;
@@ -281,85 +303,94 @@ export default function ProjectShowcase() {
         );
     }
 
-    // Desktop: show virtualized grid when showAll is true, otherwise show initial grid
+    // Projects to display
+    const projectsToShow = showAll ? publicProjects : displayedProjects;
+
+    // Desktop: show grid with infinite scroll when expanded
     return (
         <>
             <section className="w-full -mt-16 pb-12">
-                <div className="max-w-7xl mx-auto">
-                    {showAll ? (
-                        // Virtualized infinite scroll grid
-                        <VirtualizedProjectGrid
-                            projects={publicProjects as ProjectType[]}
-                            onCardClick={handleCardClick}
-                            onLoadMore={loadMore}
-                            canLoadMore={canLoadMore}
-                            isLoadingMore={isLoadingMore}
-                        />
-                    ) : (
-                        // Initial static grid
-                        <div className="px-6">
-                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                                {displayedProjects.map((project) => {
-                                    const cardHtml = project.previewHtml || project.screens?.[0]?.html || '';
-                                    const hasHtml = cardHtml.trim().length > 0;
+                <div className="max-w-7xl mx-auto px-6">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                        {projectsToShow.map((project, index) => {
+                            const cardHtml = project.previewHtml || project.screens?.[0]?.html || '';
+                            const hasHtml = cardHtml.trim().length > 0;
+                            const isNewlyRevealed = showAll && index >= INITIAL_DISPLAY_COUNT;
 
-                                    return (
-                                        <button
-                                            key={project._id}
-                                            onClick={(e) => handleCardClick(e, project as ProjectType)}
-                                            className="group relative bg-[#252526] border border-[#3e3e42] rounded-xl overflow-hidden transition-all hover:border-blue-500/30 hover:shadow-lg hover:shadow-blue-500/5 text-left cursor-pointer"
-                                        >
-                                            {/* Preview */}
-                                            <div className="relative w-full aspect-[16/10] bg-[#1a1a1a] overflow-hidden">
-                                                {hasHtml ? (
-                                                    <HtmlPreview
-                                                        html={cardHtml}
-                                                        title={project.title}
-                                                        className="absolute inset-0"
-                                                    />
-                                                ) : (
-                                                    <div className="flex items-center justify-center h-full text-zinc-600 text-xs">
-                                                        No preview
-                                                    </div>
-                                                )}
-
-                                                {/* Hover overlay */}
-                                                <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-end justify-center pb-3">
-                                                    <span className="text-xs text-white font-medium">Preview</span>
-                                                </div>
+                            return (
+                                <button
+                                    key={project._id}
+                                    onClick={(e) => handleCardClick(e, project as ProjectType)}
+                                    className={`group relative bg-[#252526] border border-[#3e3e42] rounded-xl overflow-hidden transition-all hover:border-blue-500/30 hover:shadow-lg hover:shadow-blue-500/5 text-left cursor-pointer ${isNewlyRevealed ? 'animate-fadeInUp' : ''}`}
+                                    style={isNewlyRevealed ? {
+                                        animationDelay: `${Math.min((index - INITIAL_DISPLAY_COUNT) * 50, 500)}ms`,
+                                        animationFillMode: 'backwards'
+                                    } : undefined}
+                                >
+                                    {/* Preview */}
+                                    <div className="relative w-full aspect-[16/10] bg-[#1a1a1a] overflow-hidden">
+                                        {hasHtml ? (
+                                            <HtmlPreview
+                                                html={cardHtml}
+                                                title={project.title}
+                                                className="absolute inset-0"
+                                            />
+                                        ) : (
+                                            <div className="flex items-center justify-center h-full text-zinc-600 text-xs">
+                                                No preview
                                             </div>
+                                        )}
 
-                                            {/* Card content */}
-                                            <div className="pt-3 px-3 pb-2">
-                                                <h3 className="text-xs font-medium text-zinc-100 truncate">
-                                                    {project.title}
-                                                </h3>
-                                                <div className="flex items-center justify-between mt-2">
-                                                    <span className="text-[10px] text-zinc-500">
-                                                        {project.authorName || 'Anonymous'}
-                                                    </span>
-                                                    <span className="text-[10px] text-zinc-500">
-                                                        {getRelativeTime(project.createdAt)}
-                                                    </span>
-                                                </div>
-                                            </div>
-                                        </button>
-                                    );
-                                })}
-                            </div>
+                                        {/* Hover overlay */}
+                                        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-end justify-center pb-3">
+                                            <span className="text-xs text-white font-medium">Preview</span>
+                                        </div>
+                                    </div>
 
-                            {/* Show More Button */}
-                            {hasMoreProjects && (
-                                <div className="flex justify-center mt-8">
-                                    <button
-                                        onClick={() => setShowAll(true)}
-                                        className="px-5 py-2 bg-[#252526] border border-[#3e3e42] rounded-lg text-xs text-zinc-400 hover:text-white hover:border-zinc-500 hover:bg-[#2a2a2a] transition-all duration-300 cursor-pointer"
-                                    >
-                                        Show more
-                                    </button>
+                                    {/* Card content */}
+                                    <div className="pt-3 px-3 pb-2">
+                                        <h3 className="text-xs font-medium text-zinc-100 truncate">
+                                            {project.title}
+                                        </h3>
+                                        <div className="flex items-center justify-between mt-2">
+                                            <span className="text-[10px] text-zinc-500">
+                                                {project.authorName || 'Anonymous'}
+                                            </span>
+                                            <span className="text-[10px] text-zinc-500">
+                                                {getRelativeTime(project.createdAt)}
+                                            </span>
+                                        </div>
+                                    </div>
+                                </button>
+                            );
+                        })}
+                    </div>
+
+                    {/* Show More Button - only when not expanded */}
+                    {!showAll && hasMoreProjects && (
+                        <div className="flex justify-center mt-8">
+                            <button
+                                onClick={() => setShowAll(true)}
+                                className="px-5 py-2 bg-[#252526] border border-[#3e3e42] rounded-lg text-xs text-zinc-400 hover:text-white hover:border-zinc-500 hover:bg-[#2a2a2a] transition-all duration-300 cursor-pointer"
+                            >
+                                Show more
+                            </button>
+                        </div>
+                    )}
+
+                    {/* Infinite scroll sentinel & loading indicator */}
+                    {showAll && (
+                        <>
+                            <div ref={loadMoreRef} className="h-4" />
+                            {isLoadingMore && (
+                                <div className="flex justify-center py-6">
+                                    <div className="flex items-center gap-2 text-zinc-500 text-sm">
+                                        <div className="w-4 h-4 border-2 border-zinc-600 border-t-zinc-400 rounded-full animate-spin" />
+                                        Loading more...
+                                    </div>
                                 </div>
                             )}
-                        </div>
+                        </>
                     )}
                 </div>
             </section>
