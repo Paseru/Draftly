@@ -24,12 +24,18 @@ const QUEUE_ENTRY_TIMEOUT_MS = 10 * 60 * 1000;
  * Check the current user's position in the queue.
  * Returns null if user is not in queue, 0 if user has an active slot,
  * or their position (1-indexed) if waiting.
+ *
+ * Also indicates if user has subscription (can bypass queue).
  */
 export const checkPosition = query({
     args: {},
     handler: async (ctx) => {
         const userId = await getAuthUserId(ctx);
         if (!userId) return null;
+
+        // Check if user has an active subscription (for bypass info)
+        const user = await ctx.db.get(userId);
+        const hasActiveSubscription = user?.subscriptionStatus === "active";
 
         // Check if user has an active slot
         const activeEntry = await ctx.db
@@ -39,7 +45,12 @@ export const checkPosition = query({
             .first();
 
         if (activeEntry) {
-            return { position: 0, status: "active" as const, entryId: activeEntry._id };
+            return {
+                position: 0,
+                status: "active" as const,
+                entryId: activeEntry._id,
+                hasSubscription: hasActiveSubscription,
+            };
         }
 
         // Check if user is waiting in queue
@@ -75,6 +86,7 @@ export const checkPosition = query({
             entryId: waitingEntry._id,
             activeSlots: activeCount.length,
             maxSlots: MAX_CONCURRENT_SLOTS,
+            hasSubscription: hasActiveSubscription,
         };
     },
 });
@@ -111,6 +123,9 @@ export const getQueueStats = query({
 /**
  * Join the generation queue. If a slot is available, immediately acquire it.
  * Otherwise, add user to waiting queue.
+ *
+ * PREMIUM BYPASS: Users with an active subscription skip the queue entirely
+ * and get immediate access without waiting.
  */
 export const joinQueue = mutation({
     args: {},
@@ -121,6 +136,10 @@ export const joinQueue = mutation({
         }
 
         const now = Date.now();
+
+        // Check if user has an active subscription (premium bypass)
+        const user = await ctx.db.get(userId);
+        const hasActiveSubscription = user?.subscriptionStatus === "active";
 
         // Check if user already has an active slot or is waiting
         const existingEntry = await ctx.db
@@ -142,8 +161,26 @@ export const joinQueue = mutation({
                     status: "active" as const,
                     entryId: existingEntry._id,
                     alreadyInQueue: true,
+                    bypassedQueue: false,
                 };
             }
+
+            // If user is waiting but now has subscription, upgrade them immediately
+            if (hasActiveSubscription) {
+                await ctx.db.patch(existingEntry._id, {
+                    status: "active",
+                    slotAcquiredAt: now,
+                    updatedAt: now,
+                });
+                return {
+                    position: 0,
+                    status: "active" as const,
+                    entryId: existingEntry._id,
+                    alreadyInQueue: true,
+                    bypassedQueue: true,
+                };
+            }
+
             // Return existing waiting position
             const allWaiting = await ctx.db
                 .query("generationQueue")
@@ -157,10 +194,30 @@ export const joinQueue = mutation({
                 status: "waiting" as const,
                 entryId: existingEntry._id,
                 alreadyInQueue: true,
+                bypassedQueue: false,
             };
         }
 
-        // Count current active slots
+        // PREMIUM BYPASS: Subscribers get immediate access, no queue check needed
+        if (hasActiveSubscription) {
+            const entryId = await ctx.db.insert("generationQueue", {
+                userId,
+                status: "active",
+                slotAcquiredAt: now,
+                createdAt: now,
+                updatedAt: now,
+            });
+
+            return {
+                position: 0,
+                status: "active" as const,
+                entryId,
+                alreadyInQueue: false,
+                bypassedQueue: true,
+            };
+        }
+
+        // Count current active slots (only for non-subscribers)
         const activeEntries = await ctx.db
             .query("generationQueue")
             .withIndex("by_status", (q) => q.eq("status", "active"))
@@ -183,6 +240,7 @@ export const joinQueue = mutation({
                 status: "active" as const,
                 entryId,
                 alreadyInQueue: false,
+                bypassedQueue: false,
             };
         }
 
@@ -207,6 +265,7 @@ export const joinQueue = mutation({
             status: "waiting" as const,
             entryId,
             alreadyInQueue: false,
+            bypassedQueue: false,
         };
     },
 });
@@ -214,6 +273,8 @@ export const joinQueue = mutation({
 /**
  * Try to acquire a slot. Call this when user's position becomes 0.
  * Returns success if slot acquired, or new position if still waiting.
+ *
+ * PREMIUM BYPASS: Subscribers always get a slot immediately.
  */
 export const tryAcquireSlot = mutation({
     args: {
@@ -232,14 +293,28 @@ export const tryAcquireSlot = mutation({
 
         if (entry.status === "active") {
             // Already has slot
-            return { success: true, status: "active" as const };
+            return { success: true, status: "active" as const, bypassedQueue: false };
         }
 
         if (entry.status !== "waiting") {
             throw new Error("Queue entry is not in waiting status");
         }
 
-        // Count active slots
+        // Check if user has an active subscription (premium bypass)
+        const user = await ctx.db.get(userId);
+        const hasActiveSubscription = user?.subscriptionStatus === "active";
+
+        // PREMIUM BYPASS: Subscribers always get immediate access
+        if (hasActiveSubscription) {
+            await ctx.db.patch(args.entryId, {
+                status: "active",
+                slotAcquiredAt: Date.now(),
+                updatedAt: Date.now(),
+            });
+            return { success: true, status: "active" as const, bypassedQueue: true };
+        }
+
+        // Count active slots (only for non-subscribers)
         const activeEntries = await ctx.db
             .query("generationQueue")
             .withIndex("by_status", (q) => q.eq("status", "active"))
@@ -254,7 +329,7 @@ export const tryAcquireSlot = mutation({
             const sorted = allWaiting.sort((a, b) => a.createdAt - b.createdAt);
             const position = sorted.findIndex((e) => e._id === args.entryId) + 1;
 
-            return { success: false, status: "waiting" as const, position };
+            return { success: false, status: "waiting" as const, position, bypassedQueue: false };
         }
 
         // Acquire the slot
@@ -264,7 +339,7 @@ export const tryAcquireSlot = mutation({
             updatedAt: Date.now(),
         });
 
-        return { success: true, status: "active" as const };
+        return { success: true, status: "active" as const, bypassedQueue: false };
     },
 });
 
