@@ -1,11 +1,11 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { useQuery } from 'convex/react';
-import { api } from '../../convex/_generated/api';
 import { X, Monitor, Smartphone, ChevronLeft, ChevronRight } from 'lucide-react';
 import { StreamingIframe } from './PreviewNode';
 import HtmlPreview from './HtmlPreview';
+import VirtualizedProjectGrid from './VirtualizedProjectGrid';
+import { usePaginatedProjects } from '../hooks/usePaginatedProjects';
 
 const INITIAL_DISPLAY_COUNT = 12; // 4x3 grid
 
@@ -176,14 +176,20 @@ function MobileCarousel({ projects, onCardClick }: {
 }
 
 export default function ProjectShowcase() {
-    const publicProjects = useQuery(api.projects.getPublicProjects, { limit: 50 });
+    const {
+        projects: publicProjects,
+        isLoading,
+        isLoadingMore,
+        canLoadMore,
+        loadMore,
+    } = usePaginatedProjects();
     const [previewProject, setPreviewProject] = useState<ProjectType | null>(null);
     const [viewMode, setViewMode] = useState<'desktop' | 'mobile'>('desktop');
     const [showAll, setShowAll] = useState(false);
     const isMobile = useIsMobile();
 
     // Show skeleton loader while loading
-    if (publicProjects === undefined) {
+    if (isLoading) {
         return <SkeletonGrid />;
     }
 
@@ -204,12 +210,10 @@ export default function ProjectShowcase() {
     const previewHtml = previewProject?.previewHtml || previewProject?.screens?.[0]?.html || '';
     const previewLabel = previewProject?.title || 'Preview';
 
-    // Determine which projects to display
-    const displayedProjects = showAll
-        ? publicProjects
-        : publicProjects.slice(0, INITIAL_DISPLAY_COUNT);
+    // Determine which projects to display (for non-virtualized initial view)
+    const displayedProjects = publicProjects.slice(0, INITIAL_DISPLAY_COUNT);
 
-    const hasMoreProjects = publicProjects.length > INITIAL_DISPLAY_COUNT;
+    const hasMoreProjects = publicProjects.length >= INITIAL_DISPLAY_COUNT || canLoadMore;
 
     // Mobile: show carousel with one preview at a time
     if (isMobile) {
@@ -277,76 +281,84 @@ export default function ProjectShowcase() {
         );
     }
 
-    // Desktop: show grid
+    // Desktop: show virtualized grid when showAll is true, otherwise show initial grid
     return (
         <>
             <section className="w-full -mt-16 pb-12">
-                <div className="max-w-7xl mx-auto px-6">
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                        {displayedProjects.map((project, index) => {
-                            const cardHtml = project.previewHtml || project.screens?.[0]?.html || '';
-                            const hasHtml = cardHtml.trim().length > 0;
-                            const isNewlyRevealed = showAll && index >= INITIAL_DISPLAY_COUNT;
+                <div className="max-w-7xl mx-auto">
+                    {showAll ? (
+                        // Virtualized infinite scroll grid
+                        <VirtualizedProjectGrid
+                            projects={publicProjects as ProjectType[]}
+                            onCardClick={handleCardClick}
+                            onLoadMore={loadMore}
+                            canLoadMore={canLoadMore}
+                            isLoadingMore={isLoadingMore}
+                        />
+                    ) : (
+                        // Initial static grid
+                        <div className="px-6">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                                {displayedProjects.map((project) => {
+                                    const cardHtml = project.previewHtml || project.screens?.[0]?.html || '';
+                                    const hasHtml = cardHtml.trim().length > 0;
 
-                            return (
-                                <button
-                                    key={project._id}
-                                    onClick={(e) => handleCardClick(e, project as ProjectType)}
-                                    className={`group relative bg-[#252526] border border-[#3e3e42] rounded-xl overflow-hidden transition-all hover:border-blue-500/30 hover:shadow-lg hover:shadow-blue-500/5 text-left cursor-pointer ${isNewlyRevealed ? 'animate-fadeInUp' : ''
-                                        }`}
-                                    style={isNewlyRevealed ? {
-                                        animationDelay: `${(index - INITIAL_DISPLAY_COUNT) * 50}ms`,
-                                        animationFillMode: 'backwards'
-                                    } : undefined}
-                                >
-                                    {/* Preview */}
-                                    <div className="relative w-full aspect-[16/10] bg-[#1a1a1a] overflow-hidden">
-                                        {hasHtml ? (
-                                            <HtmlPreview
-                                                html={cardHtml}
-                                                title={project.title}
-                                                className="absolute inset-0"
-                                            />
-                                        ) : (
-                                            <div className="flex items-center justify-center h-full text-zinc-600 text-xs">
-                                                No preview
+                                    return (
+                                        <button
+                                            key={project._id}
+                                            onClick={(e) => handleCardClick(e, project as ProjectType)}
+                                            className="group relative bg-[#252526] border border-[#3e3e42] rounded-xl overflow-hidden transition-all hover:border-blue-500/30 hover:shadow-lg hover:shadow-blue-500/5 text-left cursor-pointer"
+                                        >
+                                            {/* Preview */}
+                                            <div className="relative w-full aspect-[16/10] bg-[#1a1a1a] overflow-hidden">
+                                                {hasHtml ? (
+                                                    <HtmlPreview
+                                                        html={cardHtml}
+                                                        title={project.title}
+                                                        className="absolute inset-0"
+                                                    />
+                                                ) : (
+                                                    <div className="flex items-center justify-center h-full text-zinc-600 text-xs">
+                                                        No preview
+                                                    </div>
+                                                )}
+
+                                                {/* Hover overlay */}
+                                                <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-end justify-center pb-3">
+                                                    <span className="text-xs text-white font-medium">Preview</span>
+                                                </div>
                                             </div>
-                                        )}
 
-                                        {/* Hover overlay */}
-                                        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-end justify-center pb-3">
-                                            <span className="text-xs text-white font-medium">Preview</span>
-                                        </div>
-                                    </div>
+                                            {/* Card content */}
+                                            <div className="pt-3 px-3 pb-2">
+                                                <h3 className="text-xs font-medium text-zinc-100 truncate">
+                                                    {project.title}
+                                                </h3>
+                                                <div className="flex items-center justify-between mt-2">
+                                                    <span className="text-[10px] text-zinc-500">
+                                                        {project.authorName || 'Anonymous'}
+                                                    </span>
+                                                    <span className="text-[10px] text-zinc-500">
+                                                        {getRelativeTime(project.createdAt)}
+                                                    </span>
+                                                </div>
+                                            </div>
+                                        </button>
+                                    );
+                                })}
+                            </div>
 
-                                    {/* Card content */}
-                                    <div className="pt-3 px-3 pb-2">
-                                        <h3 className="text-xs font-medium text-zinc-100 truncate">
-                                            {project.title}
-                                        </h3>
-                                        <div className="flex items-center justify-between mt-2">
-                                            <span className="text-[10px] text-zinc-500">
-                                                {project.authorName || 'Anonymous'}
-                                            </span>
-                                            <span className="text-[10px] text-zinc-500">
-                                                {getRelativeTime(project.createdAt)}
-                                            </span>
-                                        </div>
-                                    </div>
-                                </button>
-                            );
-                        })}
-                    </div>
-
-                    {/* Show More Button */}
-                    {hasMoreProjects && !showAll && (
-                        <div className="flex justify-center mt-8">
-                            <button
-                                onClick={() => setShowAll(true)}
-                                className="px-5 py-2 bg-[#252526] border border-[#3e3e42] rounded-lg text-xs text-zinc-400 hover:text-white hover:border-zinc-500 hover:bg-[#2a2a2a] transition-all duration-300 cursor-pointer"
-                            >
-                                Show more
-                            </button>
+                            {/* Show More Button */}
+                            {hasMoreProjects && (
+                                <div className="flex justify-center mt-8">
+                                    <button
+                                        onClick={() => setShowAll(true)}
+                                        className="px-5 py-2 bg-[#252526] border border-[#3e3e42] rounded-lg text-xs text-zinc-400 hover:text-white hover:border-zinc-500 hover:bg-[#2a2a2a] transition-all duration-300 cursor-pointer"
+                                    >
+                                        Show more
+                                    </button>
+                                </div>
+                            )}
                         </div>
                     )}
                 </div>

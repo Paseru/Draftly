@@ -1,4 +1,5 @@
 import { mutation, query } from "./_generated/server";
+import { paginationOptsValidator } from "convex/server";
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { v } from "convex/values";
 
@@ -190,7 +191,7 @@ export const updateProjectTitle = mutation({
     },
 });
 
-// Get public projects (showcase)
+// Get public projects (showcase) - legacy, kept for backward compatibility
 export const getPublicProjects = query({
     args: {
         limit: v.optional(v.number()),
@@ -216,5 +217,35 @@ export const getPublicProjects = query({
         );
 
         return enhancedProjects;
+    },
+});
+
+// Get public projects with cursor-based pagination (showcase)
+export const getPublicProjectsPaginated = query({
+    args: {
+        paginationOpts: paginationOptsValidator,
+    },
+    handler: async (ctx, args) => {
+        const results = await ctx.db
+            .query("projects")
+            .withIndex("by_public", (q) => q.eq("isPublic", true))
+            .order("desc")
+            .paginate(args.paginationOpts);
+
+        // Enhance projects with user details
+        const enhancedPage = await Promise.all(
+            results.page.map(async (project) => {
+                const user = await ctx.db.get(project.userId);
+                return {
+                    ...project,
+                    authorName: user?.name?.split(" ")[0] || "Anonymous",
+                };
+            })
+        );
+
+        return {
+            ...results,
+            page: enhancedPage,
+        };
     },
 });
