@@ -103,7 +103,7 @@ const HtmlPreview: React.FC<HtmlPreviewProps> = ({ html = '', title, scale = 0.2
             srcDoc={html}
             title={title}
             className="w-full h-full border-0 pointer-events-none"
-            sandbox="allow-scripts allow-same-origin"
+            sandbox="allow-scripts"
             loading="lazy"
           />
         </div>

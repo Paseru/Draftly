@@ -1,6 +1,9 @@
 import { appGeneratorGraph, ConversationTurn, ScreenFlow, DesignSystemOptions, DesignSystemSelection } from '@/ai/graph';
 import { ChatVertexAI } from "@langchain/google-vertexai";
 import { buildVertexConfig } from "@/lib/vertex";
+import { convexAuthNextjsToken } from "@convex-dev/auth/nextjs/server";
+import { fetchQuery } from "convex/nextjs";
+import { api } from "../../../../convex/_generated/api";
 
 export const runtime = 'nodejs';
 export const maxDuration = 300;
@@ -30,6 +33,29 @@ function sendSSE(controller: ReadableStreamDefaultController, event: string, dat
 }
 
 export async function POST(request: Request) {
+  // SECURITY: Verify authentication
+  const token = await convexAuthNextjsToken();
+  if (!token) {
+    return new Response(JSON.stringify({ error: "Authentication required" }), {
+      status: 401,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
+
+  // SECURITY: Check quota before generation
+  const generationsData = await fetchQuery(
+    api.users.getGenerationsRemaining,
+    {},
+    { token }
+  );
+
+  if (!generationsData || (generationsData.remaining !== -1 && generationsData.remaining <= 0)) {
+    return new Response(JSON.stringify({ error: "Generation quota exceeded" }), {
+      status: 403,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
+
   const body: RequestBody = await request.json();
   const {
     prompt,

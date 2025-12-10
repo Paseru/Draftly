@@ -49,16 +49,13 @@ export const markFreeTrialUsed = mutation({
     },
 });
 
-// Reset free trial status (useful for testing or admin purposes)
-export const resetFreeTrial = mutation({
-    args: {},
-    handler: async (ctx) => {
-        const userId = await getAuthUserId(ctx);
-        if (!userId) {
-            throw new Error("Not authenticated");
-        }
-
-        await ctx.db.patch(userId, {
+// Reset free trial status (internal only - for admin purposes)
+export const resetFreeTrial = internalMutation({
+    args: {
+        userId: v.id("users"),
+    },
+    handler: async (ctx, args) => {
+        await ctx.db.patch(args.userId, {
             hasUsedFreeTrial: false,
         });
 
@@ -194,16 +191,13 @@ export const incrementGenerationsUsed = mutation({
     },
 });
 
-// Reset monthly generations (for admin/testing purposes)
-export const resetMonthlyGenerations = mutation({
-    args: {},
-    handler: async (ctx) => {
-        const userId = await getAuthUserId(ctx);
-        if (!userId) {
-            throw new Error("Not authenticated");
-        }
-
-        await ctx.db.patch(userId, {
+// Reset monthly generations (internal only - for admin purposes)
+export const resetMonthlyGenerations = internalMutation({
+    args: {
+        userId: v.id("users"),
+    },
+    handler: async (ctx, args) => {
+        await ctx.db.patch(args.userId, {
             generationsUsed: 0,
             generationsResetAt: Date.now(),
         });

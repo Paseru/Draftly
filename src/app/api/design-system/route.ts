@@ -1,6 +1,6 @@
-
 import { ChatVertexAI } from "@langchain/google-vertexai";
 import { buildVertexConfig } from "@/lib/vertex";
+import { convexAuthNextjsToken } from "@convex-dev/auth/nextjs/server";
 
 export const runtime = 'nodejs';
 export const maxDuration = 300;
@@ -10,6 +10,15 @@ interface RequestBody {
 }
 
 export async function POST(request: Request) {
+  // SECURITY: Verify authentication
+  const token = await convexAuthNextjsToken();
+  if (!token) {
+    return new Response(JSON.stringify({ error: "Authentication required" }), {
+      status: 401,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
+
   try {
     const body: RequestBody = await request.json();
     const { html } = body;

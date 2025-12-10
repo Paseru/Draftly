@@ -1,32 +1,52 @@
-# Audit sécurité – périmètre hors Stripe (05/12/2025)
+# Audit securite - perimetre hors Stripe (05/12/2025)
 
-## Résumé exécutif
-- Deux API Next publiques sans contrôle serveur permettent de consommer le LLM et contourner toute facturation interne.
-- Deux mutations Convex exposées permettent de réinitialiser gratuitement le quota et le « free trial ».
-- Rendu d’HTML généré par l’IA dans une iframe avec `allow-scripts allow-same-origin` : auto‑XSS possible, accès aux cookies/localStorage.
-- Préviews de projets gardent `allow-same-origin`, affaiblissant l’isolation.
+**Mise a jour: 10/12/2025 - Corrections appliquees**
 
-## Vulnérabilités critiques
-- **API IA non authentifiées** – `src/app/api/generate/route.ts:28` et `src/app/api/design-system/route.ts:11` acceptent n’importe quel POST, démarrent des runs Gemini (300s). Le paywall n’est que côté client (`src/app/page.tsx`). Un attaquant peut vider le quota LLM ou exfiltrer des réponses internes.  
-  **Correctif** : exiger un jeton de session Convex côté serveur ou un header signé; ajouter rate‑limit par IP/user; refuser si quota mensuel atteint.
-- **Réinitialisation de quota par tout utilisateur connecté** – `convex/users.ts:52-67` (`resetFreeTrial`) et `convex/users.ts:160-175` (`resetMonthlyGenerations`) sont des mutations publiques. Un utilisateur authentifié peut réactiver son essai et remettre son compteur à zéro.  
-  **Correctif** : convertir en `internalMutation` et vérifier un rôle admin, ou supprimer ces actions en prod.
+## Resume executif
+- ~~Deux API Next publiques sans controle serveur permettent de consommer le LLM et contourner toute facturation interne.~~ **CORRIGE**
+- ~~Deux mutations Convex exposees permettent de reinitialiser gratuitement le quota et le free trial.~~ **CORRIGE**
+- ~~Rendu d'HTML genere par l'IA dans une iframe avec `allow-scripts allow-same-origin` : auto-XSS possible.~~ **CORRIGE**
+- ~~Previews de projets gardent `allow-same-origin`, affaiblissant l'isolation.~~ **CORRIGE**
 
-## Vulnérabilités élevées
-- **Auto‑XSS sur la prévisualisation** – `src/components/PreviewNode.tsx:60-66` utilise `sandbox="allow-scripts allow-same-origin"`. Le HTML généré (non fiable) peut lire cookies/localStorage et appeler vos APIs en première partie.  
-  **Correctif** : retirer `allow-same-origin` (voire `allow-scripts`), ou servir l’aperçu depuis un sous‑domaine isolé.
-- **Isolation partielle des préviews stockées** – `src/app/projects/page.tsx:121-126` embarque des iframes avec `allow-same-origin`. Les scripts sont bloqués, mais garder le même origin réduit la défense en profondeur.  
-  **Correctif** : enlever `allow-same-origin` ici aussi.
+## Vulnerabilites critiques - CORRIGEES
 
-## Recommandations immédiates (ordre)
-1) Ajouter une vérification d’auth + quota côté serveur sur `/api/generate` et `/api/design-system`.  
-2) Rendre `resetFreeTrial` et `resetMonthlyGenerations` internes ou réservées à un rôle admin.  
-3) Durcir l’iframe : supprimer `allow-same-origin` (et idéalement `allow-scripts`) pour les rendus IA et préviews projets.  
-4) Ajouter du rate‑limit (middleware edge ou proxy) sur les routes IA pour limiter l’abus anonyme.
+### API IA non authentifiees
+- **Status**: CORRIGE (10/12/2025)
+- **Fichiers modifies**:
+  - `src/app/api/generate/route.ts` - Auth Convex + verification quota ajoutees
+  - `src/app/api/design-system/route.ts` - Auth Convex ajoutee
+  - `src/app/api/extract-name/route.ts` - Auth Convex ajoutee
+- **Protection supplementaire**: Rate limiting (10 req/min par IP) dans `src/middleware.ts`
 
-## Suivi / To‑do
-- [ ] Patcher les deux routes API pour vérifier le token Convex et le quota.  
-- [ ] Passer les mutations de reset en `internalMutation` + contrôle rôle.  
-- [ ] Mettre à jour les attributs `sandbox` des iframes.  
-- [ ] Ajouter des tests d’intégration pour les contrôles d’accès (ex. appeler `/api/generate` sans session doit 401).
+### Reinitialisation de quota par utilisateur
+- **Status**: CORRIGE (10/12/2025)
+- **Fichier modifie**: `convex/users.ts`
+- **Changements**: `resetFreeTrial` et `resetMonthlyGenerations` convertis en `internalMutation`
 
+## Vulnerabilites elevees - CORRIGEES
+
+### Auto-XSS sur la previsualisation
+- **Status**: CORRIGE (10/12/2025)
+- **Fichiers modifies**:
+  - `src/components/PreviewNode.tsx` - `allow-same-origin` retire du sandbox
+  - `src/components/HtmlPreview.tsx` - `allow-same-origin` retire du sandbox
+
+## Suivi / To-do
+- [x] Patcher les routes API pour verifier le token Convex et le quota
+- [x] Passer les mutations de reset en `internalMutation`
+- [x] Mettre a jour les attributs `sandbox` des iframes
+- [x] Ajouter rate limiting au middleware
+- [ ] Ajouter des tests d'integration pour les controles d'acces
+
+## Corrections appliquees (10/12/2025)
+
+| Vulnerabilite | Fichier | Correction |
+|---------------|---------|------------|
+| API sans auth | `src/app/api/generate/route.ts` | `convexAuthNextjsToken()` + quota check |
+| API sans auth | `src/app/api/design-system/route.ts` | `convexAuthNextjsToken()` |
+| API sans auth | `src/app/api/extract-name/route.ts` | `convexAuthNextjsToken()` |
+| Mutation publique | `convex/users.ts:resetFreeTrial` | `internalMutation` |
+| Mutation publique | `convex/users.ts:resetMonthlyGenerations` | `internalMutation` |
+| XSS iframe | `src/components/PreviewNode.tsx` | `sandbox="allow-scripts"` |
+| XSS iframe | `src/components/HtmlPreview.tsx` | `sandbox="allow-scripts"` |
+| Spam API | `src/middleware.ts` | Rate limit 10 req/min par IP |
