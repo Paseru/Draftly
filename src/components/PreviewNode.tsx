@@ -62,7 +62,7 @@ const StreamingIframe = memo(({ html, title, isGenerating }: { html: string; tit
       ref={iframeRef}
       className="flex-1 w-full border-none bg-[#09090b]"
       title={title}
-      sandbox="allow-scripts"
+      sandbox="allow-scripts allow-same-origin"
     />
   );
 });
