@@ -31,7 +31,7 @@ export async function POST(request: Request) {
     }
 
     const llm = new ChatVertexAI({
-      ...buildVertexConfig("gemini-3-pro-preview"),
+      ...buildVertexConfig("gemini-3-flash-preview"),
       temperature: 0.2, // Lower temperature for more analytical output
     });
 

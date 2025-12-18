@@ -83,7 +83,7 @@ export async function POST(request: Request) {
 
   if (mode === 'chat') {
     const llm = new ChatVertexAI({
-      ...buildVertexConfig("gemini-3-pro-preview"),
+      ...buildVertexConfig("gemini-3-flash-preview"),
       temperature: 0.7,
     });
 

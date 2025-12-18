@@ -124,7 +124,7 @@ export const AgentState = Annotation.Root({
 // --- Models ---
 
 const llm = new ChatVertexAI({
-  ...buildVertexConfig("gemini-3-pro-preview"),
+  ...buildVertexConfig("gemini-3-flash-preview"),
   temperature: 1.0,
   maxOutputTokens: 65536,
 });
@@ -132,7 +132,7 @@ const llm = new ChatVertexAI({
 // Create a tagged LLM instance for parallel screen generation
 function createScreenLLM(screenId: string) {
   return new ChatVertexAI({
-    ...buildVertexConfig("gemini-3-pro-preview"),
+    ...buildVertexConfig("gemini-3-flash-preview"),
     temperature: 1.0,
     maxOutputTokens: 65536,
   }).withConfig({ tags: [`screen:${screenId}`] });
