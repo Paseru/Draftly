@@ -2,7 +2,7 @@ import { mutation, query, internalMutation, internalQuery } from "./_generated/s
 import { components } from "./_generated/api";
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { v } from "convex/values";
-import { STRIPE_PRICES, PLAN_LIMITS, EDIT_LIMITS } from "./stripeConfig";
+import { STRIPE_PRICES, PLAN_LIMITS, EDIT_LIMITS, getPlanFromPriceId } from "./stripeConfig";
 
 // Check if the current user has already used their free trial
 export const hasUsedFreeTrial = query({
@@ -260,13 +260,42 @@ export const updateUserSubscription = internalMutation({
         subscriptionCancelAtPeriodEnd: v.boolean(),
     },
     handler: async (ctx, args) => {
-        await ctx.db.patch(args.userId, {
+        // Determine plan from priceId to set quotas
+        const plan = getPlanFromPriceId(args.subscriptionPriceId);
+
+        // Get current user to check if this is a new subscription or renewal
+        const user = await ctx.db.get(args.userId);
+        const wasActive = user?.subscriptionStatus === "active";
+        const isNowActive = args.subscriptionStatus === "active";
+
+        // Base update for subscription info
+        const updateData: Record<string, unknown> = {
             subscriptionStripeId: args.subscriptionStripeId,
             subscriptionPriceId: args.subscriptionPriceId,
             subscriptionStatus: args.subscriptionStatus,
             subscriptionCurrentPeriodEnd: args.subscriptionCurrentPeriodEnd,
             subscriptionCancelAtPeriodEnd: args.subscriptionCancelAtPeriodEnd,
-        });
+        };
+
+        // If subscription is becoming active (new subscription or reactivation),
+        // set the quotas based on the plan
+        if (isNowActive && plan !== "unknown") {
+            const generationsLimit = PLAN_LIMITS[plan as keyof typeof PLAN_LIMITS];
+            const editsLimit = EDIT_LIMITS[plan as keyof typeof EDIT_LIMITS];
+
+            // Only reset quotas if:
+            // 1. User wasn't previously active (new subscription)
+            // 2. Or the plan changed (upgrade/downgrade)
+            const planChanged = user?.subscriptionPriceId !== args.subscriptionPriceId;
+
+            if (!wasActive || planChanged) {
+                updateData.remainingGenerations = generationsLimit;
+                updateData.remainingEdits = editsLimit;
+                console.log(`✅ Set quotas for ${plan}: ${generationsLimit} generations, ${editsLimit} edits`);
+            }
+        }
+
+        await ctx.db.patch(args.userId, updateData);
         return { success: true };
     },
 });
