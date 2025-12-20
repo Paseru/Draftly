@@ -27,6 +27,14 @@ export const PLAN_LIMITS = {
     enterprise: -1, // Unlimited
 } as const;
 
+// Plan edit limits (used for quota checking)
+export const EDIT_LIMITS = {
+    free: 5,       // Free users get 5 edits
+    starter: 300,
+    pro: 1500,
+    enterprise: -1, // Unlimited
+} as const;
+
 // Helper to get plan ID from price ID
 export function getPlanFromPriceId(priceId: string): 'starter' | 'pro' | 'enterprise' | 'unknown' {
     if (priceId === STRIPE_PRICES.starter) return 'starter';

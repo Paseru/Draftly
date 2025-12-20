@@ -13,8 +13,10 @@ export const PLAN_DETAILS = {
         price: 19,
         period: 'month',
         generations: 10,
+        edits: 300,
         features: [
             '10 app generations per month',
+            '300 screen edits per month',
             'Full app generation with all screens',
             'Export your designs anytime',
         ],
@@ -26,8 +28,10 @@ export const PLAN_DETAILS = {
         price: 49,
         period: 'month',
         generations: 50,
+        edits: 1500,
         features: [
             '50 app generations per month',
+            '1,500 screen edits per month',
             'Full app generation with all screens',
             'Export your designs anytime',
         ],
@@ -39,8 +43,10 @@ export const PLAN_DETAILS = {
         price: 149,
         period: 'month',
         generations: -1, // Unlimited
+        edits: -1, // Unlimited
         features: [
             'Unlimited generations',
+            'Unlimited screen edits',
             'Full app generation with all screens',
             'Export your designs anytime',
         ],

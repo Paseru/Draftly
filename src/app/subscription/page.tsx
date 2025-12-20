@@ -32,6 +32,7 @@ export default function SubscriptionPage() {
     const { isAuthenticated, isLoading: isAuthLoading } = useConvexAuth();
     const subscription = useQuery(api.stripe.getUserSubscription);
     const generationsData = useQuery(api.users.getGenerationsRemaining);
+    const editsData = useQuery(api.users.getEditsRemaining);
 
     // Fetch prices dynamically from Convex server
     const stripePricesData = useQuery(api.stripeConfig.getStripePrices);
@@ -186,7 +187,7 @@ export default function SubscriptionPage() {
                             </div>
                         </div>
 
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
                             {/* Plan */}
                             <div className="space-y-1">
                                 <p className="text-[10px] text-zinc-500 uppercase tracking-wider">Plan</p>
@@ -220,6 +221,20 @@ export default function SubscriptionPage() {
                                     ) : (
                                         <span>
                                             {generationsData?.remaining ?? 0} / {generationsData?.total ?? 0} remaining
+                                        </span>
+                                    )}
+                                </p>
+                            </div>
+
+                            {/* Edits */}
+                            <div className="space-y-1">
+                                <p className="text-[10px] text-zinc-500 uppercase tracking-wider">Edits</p>
+                                <p className="text-sm font-medium text-zinc-100">
+                                    {editsData?.remaining === -1 ? (
+                                        <span className="text-green-400">● Unlimited</span>
+                                    ) : (
+                                        <span>
+                                            {editsData?.remaining ?? 0} / {editsData?.total ?? 0} remaining
                                         </span>
                                     )}
                                 </p>

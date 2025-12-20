@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ChevronRight, ChevronDown, CheckCircle2, Type, Palette } from 'lucide-react';
+import { ChevronRight, ChevronDown, CheckCircle2, Type, Palette, Pencil } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 export interface FontOption {
@@ -32,14 +32,29 @@ interface Props {
   options: DesignSystemOptions;
   onSubmit?: (selection: DesignSystemSelection) => void;
   submittedSelection?: DesignSystemSelection | null;
+  // Edit mode props
+  onEdit?: () => void;
+  isEditing?: boolean;
+  onConfirmEdit?: (selection: DesignSystemSelection) => void;
+  disabled?: boolean; // Disable editing (e.g., during generation)
 }
 
-export default function DesignSystemSelector({ options, onSubmit, submittedSelection }: Props) {
+export default function DesignSystemSelector({
+  options,
+  onSubmit,
+  submittedSelection,
+  onEdit,
+  isEditing,
+  onConfirmEdit,
+  disabled
+}: Props) {
   const [selectedFont, setSelectedFont] = useState<FontOption | null>(submittedSelection?.font || null);
   const [selectedVibe, setSelectedVibe] = useState<VibeOption | null>(submittedSelection?.vibe || null);
   const [isExpanded, setIsExpanded] = useState(!submittedSelection);
+  const [isHovered, setIsHovered] = useState(false);
 
-  const isSubmitted = !!submittedSelection;
+  // In edit mode, treat as not submitted so user can change selection
+  const isSubmitted = !!submittedSelection && !isEditing;
 
   // Load Google Fonts dynamically
   useEffect(() => {
@@ -64,14 +79,21 @@ export default function DesignSystemSelector({ options, onSubmit, submittedSelec
 
   // Collapse when submitted (using useEffect with proper cleanup pattern)
   useEffect(() => {
-    if (submittedSelection) {
+    if (submittedSelection && !isEditing) {
       // Use requestAnimationFrame to defer the state update
       const rafId = requestAnimationFrame(() => {
         setIsExpanded(false);
       });
       return () => cancelAnimationFrame(rafId);
     }
-  }, [submittedSelection]);
+  }, [submittedSelection, isEditing]);
+
+  // Expand when entering edit mode
+  useEffect(() => {
+    if (isEditing) {
+      setIsExpanded(true);
+    }
+  }, [isEditing]);
 
 
 
@@ -80,26 +102,53 @@ export default function DesignSystemSelector({ options, onSubmit, submittedSelec
     onSubmit({ font: selectedFont, vibe: selectedVibe });
   };
 
+  const handleConfirmEditClick = () => {
+    if (!onConfirmEdit || !selectedFont || !selectedVibe || !isEditing) return;
+    onConfirmEdit({ font: selectedFont, vibe: selectedVibe });
+  };
+
   const canSubmit = selectedFont && selectedVibe;
 
   return (
-    <div className="w-full max-w-xl bg-[#1e1e1e] border border-[#27272a] rounded-xl overflow-hidden transition-all duration-200">
+    <div
+      className="w-full max-w-xl bg-[#1e1e1e] border border-[#27272a] rounded-xl overflow-hidden transition-all duration-200"
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+    >
       <div
         onClick={() => setIsExpanded(!isExpanded)}
         className="flex items-center justify-between px-4 py-3 transition-colors cursor-pointer hover:bg-white/5"
       >
         <div className="flex items-center gap-2">
-          {isSubmitted ? (
+          {isSubmitted || (submittedSelection && !isEditing) ? (
             <Palette size={14} className="text-orange-500" />
           ) : (
             <div className="w-1.5 h-1.5 rounded-full bg-orange-500 animate-pulse" />
           )}
-          <span className={`text-xs font-medium tracking-wide ${isSubmitted ? 'text-zinc-500' : 'text-white'}`}>
+          <span className={`text-xs font-medium tracking-wide ${isSubmitted || (submittedSelection && !isEditing) ? 'text-zinc-500' : 'text-white'}`}>
             Design System
           </span>
         </div>
-        <div className="text-zinc-500">
-          {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+        <div className="flex items-center gap-2">
+          {/* Edit button - always rendered to preserve space, visibility controlled by opacity */}
+          {submittedSelection && !isEditing && onEdit && !disabled && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onEdit();
+              }}
+              className={cn(
+                "p-1 rounded hover:bg-white/10 text-zinc-400 hover:text-white transition-all cursor-pointer",
+                isHovered ? "opacity-100" : "opacity-0"
+              )}
+              title="Edit design system"
+            >
+              <Pencil size={12} />
+            </button>
+          )}
+          <div className="text-zinc-500">
+            {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+          </div>
         </div>
       </div>
 
@@ -255,7 +304,7 @@ export default function DesignSystemSelector({ options, onSubmit, submittedSelec
       {!isSubmitted && isExpanded && (
         <div className="flex justify-end px-4 py-3 border-t border-[#27272a] bg-[#1e1e1e]">
           <button
-            onClick={handleSubmit}
+            onClick={isEditing ? handleConfirmEditClick : handleSubmit}
             disabled={!canSubmit}
             className={cn(
               "px-4 py-1.5 rounded text-[11px] font-medium transition-all flex items-center gap-1.5",
@@ -264,7 +313,7 @@ export default function DesignSystemSelector({ options, onSubmit, submittedSelec
                 : "bg-[#27272a] text-zinc-500 cursor-not-allowed border border-transparent"
             )}
           >
-            Generate Plan
+            {isEditing ? 'Confirm Edit' : 'Generate Plan'}
             <ChevronRight size={12} />
           </button>
         </div>

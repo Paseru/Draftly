@@ -2,7 +2,7 @@ import { mutation, query, internalMutation, internalQuery } from "./_generated/s
 import { components } from "./_generated/api";
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { v } from "convex/values";
-import { STRIPE_PRICES, PLAN_LIMITS } from "./stripeConfig";
+import { STRIPE_PRICES, PLAN_LIMITS, EDIT_LIMITS } from "./stripeConfig";
 
 // Check if the current user has already used their free trial
 export const hasUsedFreeTrial = query({
@@ -200,6 +200,129 @@ export const resetMonthlyGenerations = internalMutation({
         await ctx.db.patch(args.userId, {
             generationsUsed: 0,
             generationsResetAt: Date.now(),
+        });
+
+        return { success: true };
+    },
+});
+
+// ============================================================================
+// EDIT TRACKING
+// ============================================================================
+
+// Get the number of edits remaining for the current user
+// Simplified: both free and paid users have edit quotas
+export const getEditsRemaining = query({
+    args: {},
+    handler: async (ctx) => {
+        const userId = await getAuthUserId(ctx);
+        if (!userId) {
+            return null;
+        }
+
+        const user = await ctx.db.get(userId);
+        if (!user) {
+            return null;
+        }
+
+        // Determine plan based on subscription status
+        let plan: "free" | "starter" | "pro" | "enterprise" = "free";
+
+        if (user.subscriptionPriceId && user.subscriptionStatus === "active") {
+            if (user.subscriptionPriceId === STRIPE_PRICES.pro) {
+                plan = "pro";
+            } else if (user.subscriptionPriceId === STRIPE_PRICES.enterprise) {
+                plan = "enterprise";
+            } else {
+                plan = "starter";
+            }
+        }
+
+        const limit = EDIT_LIMITS[plan];
+
+        // For unlimited plans
+        if (limit === -1) {
+            return { remaining: -1, total: -1, plan };
+        }
+
+        // Check if we need to reset the counter (new month)
+        const now = Date.now();
+        const resetAt = user.editsResetAt || 0;
+        const oneMonthAgo = now - (30 * 24 * 60 * 60 * 1000);
+
+        // If the reset date is more than a month ago, the counter should be 0
+        const editsUsed = resetAt < oneMonthAgo ? 0 : (user.editsUsed || 0);
+
+        return {
+            remaining: Math.max(0, limit - editsUsed),
+            total: limit,
+            plan,
+            used: editsUsed
+        };
+    },
+});
+
+// Increment the edits used counter
+// Simplified: works for both free and paid users
+export const incrementEditsUsed = mutation({
+    args: {},
+    handler: async (ctx) => {
+        const userId = await getAuthUserId(ctx);
+        if (!userId) {
+            throw new Error("Not authenticated");
+        }
+
+        const user = await ctx.db.get(userId);
+        if (!user) {
+            throw new Error("User not found");
+        }
+
+        const now = Date.now();
+        const resetAt = user.editsResetAt || 0;
+        const oneMonthAgo = now - (30 * 24 * 60 * 60 * 1000);
+
+        let newEditsUsed = (user.editsUsed || 0) + 1;
+
+        // Reset if older than a month
+        if (resetAt < oneMonthAgo) {
+            newEditsUsed = 1;
+        }
+
+        // Determine plan (free if no active subscription)
+        let plan: "free" | "starter" | "pro" | "enterprise" = "free";
+        if (user.subscriptionPriceId && user.subscriptionStatus === "active") {
+            if (user.subscriptionPriceId === STRIPE_PRICES.pro) plan = "pro";
+            else if (user.subscriptionPriceId === STRIPE_PRICES.enterprise) plan = "enterprise";
+            else plan = "starter";
+        }
+
+        const limit = EDIT_LIMITS[plan];
+        const remaining = limit === -1 ? 9999 : Math.max(0, limit - newEditsUsed);
+
+        const updates: Record<string, unknown> = {
+            editsUsed: newEditsUsed,
+            remainingEdits: remaining
+        };
+
+        if (resetAt < oneMonthAgo) {
+            updates.editsResetAt = now;
+        }
+
+        await ctx.db.patch(userId, updates);
+
+        return { success: true };
+    },
+});
+
+// Reset monthly edits (internal only - for admin purposes)
+export const resetMonthlyEdits = internalMutation({
+    args: {
+        userId: v.id("users"),
+    },
+    handler: async (ctx, args) => {
+        await ctx.db.patch(args.userId, {
+            editsUsed: 0,
+            editsResetAt: Date.now(),
         });
 
         return { success: true };

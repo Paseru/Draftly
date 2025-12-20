@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ChevronRight, ChevronDown, Edit3, HelpCircle } from 'lucide-react';
+import { ChevronRight, ChevronDown, Edit3, HelpCircle, Pencil } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import ReactMarkdown from 'react-markdown';
 
@@ -21,18 +21,35 @@ interface Props {
   onAutoGenerate?: (answers: ClarificationAnswer[]) => void;
   submittedAnswer?: ClarificationAnswer | null;
   startIndex?: number;
+  // Edit mode props
+  onEdit?: () => void;
+  isEditing?: boolean;
+  onConfirmEdit?: (answer: ClarificationAnswer) => void;
+  disabled?: boolean; // Disable editing (e.g., during generation)
 }
 
-export default function ClarificationQuestions({ questions, onSubmit, onAutoGenerate, submittedAnswer, startIndex = 1 }: Props) {
+export default function ClarificationQuestions({
+  questions,
+  onSubmit,
+  onAutoGenerate,
+  submittedAnswer,
+  startIndex = 1,
+  onEdit,
+  isEditing,
+  onConfirmEdit,
+  disabled
+}: Props) {
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [customInputs, setCustomInputs] = useState<Record<string, string>>({});
   const [activeCustom, setActiveCustom] = useState<Record<string, boolean>>({});
   const [isExpanded, setIsExpanded] = useState(true);
+  const [isHovered, setIsHovered] = useState(false);
 
-  const isAnswered = !!submittedAnswer;
+  // In edit mode, treat as not answered so user can change selection
+  const isAnswered = !!submittedAnswer && !isEditing;
 
   useEffect(() => {
-    if (submittedAnswer) {
+    if (submittedAnswer && !isEditing) {
       requestAnimationFrame(() => {
         setIsExpanded(false);
         const qId = submittedAnswer.questionId;
@@ -50,7 +67,14 @@ export default function ClarificationQuestions({ questions, onSubmit, onAutoGene
         }
       });
     }
-  }, [submittedAnswer, questions]);
+  }, [submittedAnswer, questions, isEditing]);
+
+  // Expand when entering edit mode
+  useEffect(() => {
+    if (isEditing) {
+      setIsExpanded(true);
+    }
+  }, [isEditing]);
 
   const handleSelect = (qId: string, value: string) => {
     if (isAnswered) return;
@@ -98,26 +122,59 @@ export default function ClarificationQuestions({ questions, onSubmit, onAutoGene
     onAutoGenerate(formattedAnswers);
   };
 
+  const handleConfirmEditClick = () => {
+    if (!onConfirmEdit || !isEditing) return;
+    const q = questions[0];
+    const answer: ClarificationAnswer = {
+      questionId: q.id,
+      question: q.question,
+      answer: answers[q.id] || customInputs[q.id] || "Skipped"
+    };
+    onConfirmEdit(answer);
+  };
+
   const allAnswered = questions.every(q => !!answers[q.id]);
 
   return (
-    <div className="w-full max-w-xl bg-[#1e1e1e] border border-[#27272a] rounded-xl overflow-hidden transition-all duration-200">
+    <div
+      className="w-full max-w-xl bg-[#1e1e1e] border border-[#27272a] rounded-xl overflow-hidden transition-all duration-200 group/question"
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+    >
       <div
         onClick={() => setIsExpanded(!isExpanded)}
         className="flex items-center justify-between px-4 py-3 transition-colors cursor-pointer hover:bg-white/5"
       >
         <div className="flex items-center gap-2">
-          {isAnswered ? (
+          {isAnswered || (submittedAnswer && !isEditing) ? (
             <HelpCircle size={14} className="text-blue-500" />
           ) : (
             <div className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse" />
           )}
-          <span className={`text-xs font-medium tracking-wide ${isAnswered ? 'text-zinc-500' : 'text-white'}`}>
+          <span className={`text-xs font-medium tracking-wide ${isAnswered || (submittedAnswer && !isEditing) ? 'text-zinc-500' : 'text-white'}`}>
             Question {startIndex}
           </span>
         </div>
-        <div className="text-zinc-500">
-          {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+        <div className="flex items-center gap-2">
+          {/* Edit button - always rendered to preserve space, visibility controlled by opacity */}
+          {submittedAnswer && !isEditing && onEdit && !disabled && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onEdit();
+              }}
+              className={cn(
+                "p-1 rounded hover:bg-white/10 text-zinc-400 hover:text-white transition-all cursor-pointer",
+                isHovered ? "opacity-100" : "opacity-0"
+              )}
+              title="Edit this answer"
+            >
+              <Pencil size={12} />
+            </button>
+          )}
+          <div className="text-zinc-500">
+            {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+          </div>
         </div>
       </div>
 
@@ -206,7 +263,8 @@ export default function ClarificationQuestions({ questions, onSubmit, onAutoGene
 
           {!isAnswered && (
             <div className="flex justify-end items-center pt-2 border-t border-[#27272a] mt-4 gap-3">
-              {onAutoGenerate && (
+              {/* Hide "Skip to Design" in edit mode */}
+              {onAutoGenerate && !isEditing && (
                 <button
                   onClick={handleAutoGenerateClick}
                   disabled={!allAnswered}
@@ -222,7 +280,7 @@ export default function ClarificationQuestions({ questions, onSubmit, onAutoGene
               )}
 
               <button
-                onClick={handleSubmit}
+                onClick={isEditing ? handleConfirmEditClick : handleSubmit}
                 disabled={!allAnswered}
                 className={cn(
                   "mt-3 px-4 py-1.5 rounded text-[11px] font-medium transition-all flex items-center gap-1.5",
@@ -231,7 +289,7 @@ export default function ClarificationQuestions({ questions, onSubmit, onAutoGene
                     : "bg-[#27272a] text-zinc-500 cursor-not-allowed border border-transparent"
                 )}
               >
-                Submit Answer
+                {isEditing ? 'Confirm Edit' : 'Submit Answer'}
                 <ChevronRight size={12} />
               </button>
             </div>

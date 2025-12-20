@@ -398,13 +398,15 @@ export default function ProjectShowcase() {
             {/* Preview Modal */}
             {previewProject && (
                 <div className="fixed inset-0 z-50 bg-black/95 flex items-center justify-center backdrop-blur-md p-4 animate-in fade-in duration-200">
-                    {/* Global close button */}
-                    <button
-                        onClick={closeModal}
-                        className="absolute top-6 right-6 text-zinc-400 hover:text-white p-2 rounded-full hover:bg-white/10 transition-all cursor-pointer z-50"
-                    >
-                        <X size={24} />
-                    </button>
+                    {/* Close button for mobile only (outside the phone frame) */}
+                    {viewMode === 'mobile' && (
+                        <button
+                            onClick={closeModal}
+                            className="absolute top-6 right-6 text-zinc-400 hover:text-white p-2 rounded-full hover:bg-white/10 transition-all cursor-pointer z-50"
+                        >
+                            <X size={24} />
+                        </button>
+                    )}
 
                     {viewMode === 'mobile' ? (
                         <div className="absolute bottom-[3%] left-1/2 -translate-x-1/2 scale-[0.75] sm:scale-[0.88] transition-transform duration-300 origin-bottom">
@@ -445,15 +447,35 @@ export default function ProjectShowcase() {
                                     </div>
                                 )}
                             </div>
+
+                            {/* View mode toggle for mobile - below the phone */}
+                            <div className="flex justify-center mt-6">
+                                <div className="flex items-center gap-1 bg-[#252526]/90 backdrop-blur-md border border-[#3e3e42] p-1 rounded-full shadow-xl ring-1 ring-black/20">
+                                    <button
+                                        onClick={() => setViewMode('desktop')}
+                                        className="p-2 rounded-full transition-all cursor-pointer text-zinc-500 hover:text-zinc-300 hover:bg-white/5"
+                                        title="Desktop View"
+                                    >
+                                        <Monitor size={18} />
+                                    </button>
+                                    <button
+                                        onClick={() => setViewMode('mobile')}
+                                        className="p-2 rounded-full transition-all cursor-pointer bg-blue-500/20 text-blue-400 shadow-sm"
+                                        title="Mobile View"
+                                    >
+                                        <Smartphone size={18} />
+                                    </button>
+                                </div>
+                            </div>
                         </div>
                     ) : (
-                        /* Desktop preview: 95% size, bottom aligned, centered */
+                        /* Desktop preview: full size */
                         <div
-                            className="bg-[#1e1e1e] rounded-xl border border-[#3e3e42] shadow-2xl flex flex-col overflow-hidden ring-1 ring-white/10 absolute bottom-[2.5%] left-1/2 -translate-x-1/2"
-                            style={{ height: 'calc((100vh - 80px) * 0.95)', width: '95%' }}
+                            className="bg-[#1e1e1e] w-full h-full rounded-xl border border-[#3e3e42] shadow-2xl flex flex-col overflow-hidden ring-1 ring-white/10"
                         >
-                            <div className="h-auto min-h-9 py-2 bg-[#252526] border-b border-[#3e3e42] flex items-center px-3">
-                                <div className="flex items-center gap-3 flex-wrap">
+                            <div className="h-9 bg-[#252526] border-b border-[#3e3e42] flex items-center justify-between px-3 relative">
+                                {/* Left: traffic lights + label */}
+                                <div className="flex items-center gap-3">
                                     <div className="flex gap-1.5 shrink-0">
                                         <div className="w-3 h-3 rounded-full bg-[#ff5f56]"></div>
                                         <div className="w-3 h-3 rounded-full bg-[#ffbd2e]"></div>
@@ -461,6 +483,31 @@ export default function ProjectShowcase() {
                                     </div>
                                     <span className="text-xs font-medium text-zinc-400">{previewLabel}</span>
                                 </div>
+                                {/* Center: View mode toggle */}
+                                <div className="absolute left-1/2 -translate-x-1/2 flex items-center gap-1 bg-[#1e1e1e] border border-[#3e3e42] p-0.5 rounded-full">
+                                    <button
+                                        onClick={() => setViewMode('desktop')}
+                                        className="p-1.5 rounded-full transition-all cursor-pointer bg-blue-500/20 text-blue-400"
+                                        title="Desktop View"
+                                    >
+                                        <Monitor size={14} />
+                                    </button>
+                                    <button
+                                        onClick={() => setViewMode('mobile')}
+                                        className="p-1.5 rounded-full transition-all cursor-pointer text-zinc-500 hover:text-zinc-300 hover:bg-white/5"
+                                        title="Mobile View"
+                                    >
+                                        <Smartphone size={14} />
+                                    </button>
+                                </div>
+                                {/* Right: Close button */}
+                                <button
+                                    onClick={closeModal}
+                                    className="text-zinc-400 hover:text-white p-1.5 rounded hover:bg-white/10 transition-all cursor-pointer"
+                                    title="Close"
+                                >
+                                    <X size={14} />
+                                </button>
                             </div>
                             <div className="flex-1 bg-[#09090b] overflow-hidden relative flex flex-col">
                                 {previewHtml ? (
@@ -477,24 +524,6 @@ export default function ProjectShowcase() {
                             </div>
                         </div>
                     )}
-
-                    {/* View mode toggle */}
-                    <div className="absolute top-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-1 bg-[#252526]/90 backdrop-blur-md border border-[#3e3e42] p-1 rounded-full shadow-xl ring-1 ring-black/20">
-                        <button
-                            onClick={() => setViewMode('desktop')}
-                            className={`p-2 rounded-full transition-all cursor-pointer ${viewMode === 'desktop' ? 'bg-blue-500/20 text-blue-400 shadow-sm' : 'text-zinc-500 hover:text-zinc-300 hover:bg-white/5'}`}
-                            title="Desktop View"
-                        >
-                            <Monitor size={20} />
-                        </button>
-                        <button
-                            onClick={() => setViewMode('mobile')}
-                            className={`p-2 rounded-full transition-all cursor-pointer ${viewMode === 'mobile' ? 'bg-blue-500/20 text-blue-400 shadow-sm' : 'text-zinc-500 hover:text-zinc-300 hover:bg-white/5'}`}
-                            title="Mobile View"
-                        >
-                            <Smartphone size={20} />
-                        </button>
-                    </div>
                 </div>
             )}
         </>

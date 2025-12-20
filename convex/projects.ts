@@ -191,6 +191,50 @@ export const updateProjectTitle = mutation({
     },
 });
 
+// Update a specific screen's HTML (for LLM Patch Mode editing)
+export const updateScreenHtml = mutation({
+    args: {
+        projectId: v.id("projects"),
+        screenId: v.string(),
+        html: v.string(),
+    },
+    handler: async (ctx, args) => {
+        const userId = await getAuthUserId(ctx);
+        if (!userId) {
+            throw new Error("Not authenticated");
+        }
+
+        const project = await ctx.db.get(args.projectId);
+
+        if (!project || project.userId !== userId) {
+            throw new Error("Project not found or access denied");
+        }
+
+        // Find and update the specific screen
+        const screenIndex = project.screens.findIndex(s => s.id === args.screenId);
+        if (screenIndex === -1) {
+            throw new Error("Screen not found");
+        }
+
+        const updatedScreens = project.screens.map(screen =>
+            screen.id === args.screenId
+                ? { ...screen, html: args.html }
+                : screen
+        );
+
+        // Also update previewHtml if this is the first screen
+        const previewHtml = screenIndex === 0 ? args.html : project.previewHtml;
+
+        await ctx.db.patch(args.projectId, {
+            screens: updatedScreens,
+            previewHtml,
+            updatedAt: Date.now(),
+        });
+
+        return { success: true };
+    },
+});
+
 // Get public projects (showcase) - legacy, kept for backward compatibility
 export const getPublicProjects = query({
     args: {

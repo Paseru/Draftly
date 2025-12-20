@@ -21,6 +21,7 @@ import { saveAs } from 'file-saver';
 import AiPaintbrush from '@/components/ui/AiPaintbrush';
 import Link from 'next/link';
 import PreviewNode, { StreamingIframe } from '@/components/PreviewNode';
+import ScreenEditor from '@/components/ScreenEditor';
 import ProcessSteps, { Step } from '@/components/ProcessSteps';
 import ThinkingBlock from '@/components/ThinkingBlock';
 import ClarificationQuestions, { ClarificationQuestion, ClarificationAnswer } from '@/components/ClarificationQuestions';
@@ -46,6 +47,7 @@ import { ConversationTurn, ScreenFlow } from '@/ai/graph';
 import { AnimatePresence, motion } from 'framer-motion';
 import AnimatedEdge from '@/components/AnimatedEdge';
 import { computeFlowLayout, getLayoutConfig } from '@/lib/layoutUtils';
+import { applyPatches, PatchOperation, parsePatchResponse } from '@/lib/patchUtils';
 
 interface PlannedScreen {
   id: string;
@@ -107,7 +109,23 @@ export default function Home() {
   const [pendingPrompt, setPendingPrompt] = useState<string | null>(null);
   const [loadedProjectId, setLoadedProjectId] = useState<string | null>(null);
   const [savedProjectId, setSavedProjectId] = useState<Id<"projects"> | null>(null);
+  const [isLoadedProject, setIsLoadedProject] = useState(false); // True when viewing an existing project
   const completedScreensCountRef = useRef<number>(0);
+
+  // Edit mode states
+  const [selectedScreenId, setSelectedScreenId] = useState<string | null>(null);
+  const [editorScreenId, setEditorScreenId] = useState<string | null>(null);
+  const [isApplyingPatch, setIsApplyingPatch] = useState(false);
+  // Track pending changes per screen: screenId -> { newHtml, originalHtml }
+  const [pendingChanges, setPendingChanges] = useState<Map<string, { newHtml: string; originalHtml: string }>>(new Map());
+  // AbortController for canceling edit API calls
+  const editAbortControllerRef = useRef<AbortController | null>(null);
+  // Step editing state - for going back and editing previous answers
+  const [editingStep, setEditingStep] = useState<{
+    type: 'clarification' | 'design_system' | 'architecture';
+    messageIndex: number;
+    questionId?: string;
+  } | null>(null);
   const { isAuthenticated, isLoading: isAuthLoading } = useConvexAuth();
   const { signOut } = useAuthActions();
 
@@ -121,12 +139,17 @@ export default function Home() {
   const incrementGenerationsUsed = useMutation(api.users.incrementGenerationsUsed);
   const createProject = useMutation(api.projects.createProject);
   const updateProjectTitle = useMutation(api.projects.updateProjectTitle);
+  const updateScreenHtml = useMutation(api.projects.updateScreenHtml);
 
   // Get first name from user
   const firstName = currentUser?.name?.split(' ')[0] || '';
 
   // Get remaining generations for the user
   const generationsData = useQuery(api.users.getGenerationsRemaining);
+
+  // Get remaining edits for the user
+  const editsData = useQuery(api.users.getEditsRemaining);
+  const incrementEditsUsed = useMutation(api.users.incrementEditsUsed);
 
   // Queue system for rate limiting
   const [isQueueModalOpen, setIsQueueModalOpen] = useState(false);
@@ -472,6 +495,56 @@ export default function Home() {
   const abortControllerRef = useRef<AbortController | null>(null);
   const reactFlowInstance = useRef<ReactFlowInstance | null>(null);
 
+  const fitViewOnReady = useCallback((
+    nodeIds?: string[],
+    options?: { padding?: number; duration?: number; maxAttempts?: number; delayMs?: number }
+  ) => {
+    const padding = options?.padding ?? 0.15;
+    const duration = options?.duration ?? 800;
+    const maxAttempts = options?.maxAttempts ?? 10;
+    const delayMs = options?.delayMs ?? 120;
+
+    const attemptFit = (attempt = 0) => {
+      const instance = reactFlowInstance.current as ReactFlowInstance & {
+        updateNodeInternals?: (ids: string[]) => void;
+      };
+
+      if (!instance) {
+        if (attempt < maxAttempts) {
+          setTimeout(() => attemptFit(attempt + 1), delayMs);
+        }
+        return;
+      }
+
+      const ids = nodeIds && nodeIds.length > 0
+        ? nodeIds
+        : instance.getNodes().map((node) => node.id);
+
+      instance.updateNodeInternals?.(ids);
+
+      const measuredNodes = instance.getNodes();
+      const nodesReady = measuredNodes.length > 0
+        && measuredNodes.every((node) => (node.width ?? 0) > 0 && (node.height ?? 0) > 0);
+
+      if (!nodesReady && attempt < maxAttempts) {
+        setTimeout(() => attemptFit(attempt + 1), delayMs);
+        return;
+      }
+
+      if (typeof window !== 'undefined' && window.requestAnimationFrame) {
+        window.requestAnimationFrame(() => {
+          instance.fitView({ duration, padding });
+        });
+      } else {
+        setTimeout(() => {
+          instance.fitView({ duration, padding });
+        }, 0);
+      }
+    };
+
+    attemptFit();
+  }, []);
+
   const onConnect = useCallback(
     (params: Connection) => setEdges((eds: Edge[]) => addEdge(params, eds)),
     [setEdges],
@@ -519,7 +592,7 @@ export default function Home() {
     setNodes(prev => recalculateLayout(mode, prev));
 
     setTimeout(() => {
-      reactFlowInstance.current?.fitView({ duration: 800, padding: 0.2 });
+      fitViewOnReady(undefined, { duration: 800, padding: 0.2 });
     }, 600);
   };
 
@@ -532,6 +605,19 @@ export default function Home() {
   }, []);
 
   const handleFocus = useCallback((id: string) => {
+    // Set selected screen
+    setSelectedScreenId(id);
+
+    // Update isSelected on all nodes
+    setNodes(prev => prev.map(node => ({
+      ...node,
+      data: {
+        ...node.data,
+        isSelected: node.id === id
+      }
+    })));
+
+    // Zoom to the node
     const node = reactFlowInstance.current?.getNode(id);
     if (node && reactFlowInstance.current) {
       const currentMode = viewModeRef.current;
@@ -541,12 +627,258 @@ export default function Home() {
       const y = node.position.y + h / 2;
       reactFlowInstance.current.setCenter(x, y, { zoom: 0.6, duration: 1200 });
     }
+  }, [setNodes]);
+
+  // Deselect screen
+  const handleDeselect = useCallback(() => {
+    setSelectedScreenId(null);
+    setNodes(prev => prev.map(node => ({
+      ...node,
+      data: {
+        ...node.data,
+        isSelected: false
+      }
+    })));
+  }, [setNodes]);
+
+  // Open fullscreen editor for a screen
+  const handleOpenEditor = useCallback((screenId: string) => {
+    setEditorScreenId(screenId);
   }, []);
+
+  // Close fullscreen editor
+  const handleCloseEditor = useCallback(() => {
+    setEditorScreenId(null);
+  }, []);
+
+  // Edit screen with LLM Patch Mode
+  const handleEditScreen = useCallback(async (
+    screenId: string,
+    userRequest: string,
+    selectedElementId?: string,
+    cssSelector?: string,
+    elementHtml?: string
+  ) => {
+    if (!screenId || !userRequest.trim()) return;
+
+    // EDIT LIMIT CHECK: If user has no edits remaining, show subscription modal
+    // Simplified: same logic for free and paid users - just check remaining edits
+    if (editsData && editsData.remaining === 0) {
+      console.log('[Paywall] User has no edits remaining, showing subscription modal');
+      setIsSubscriptionModalOpen(true);
+      return;
+    }
+
+    // Use reactFlowInstance to get the node (avoids nodes dependency causing infinite loop)
+    const screenNode = reactFlowInstance.current?.getNode(screenId);
+    const currentHtml = screenNode?.data?.html as string | undefined;
+
+    if (!currentHtml) {
+      console.error('[Edit] No HTML found for selected screen');
+      return;
+    }
+
+    // Create abort controller for this edit
+    editAbortControllerRef.current = new AbortController();
+    setIsApplyingPatch(true);
+
+    // Update node to show editing state
+    setNodes(prev => prev.map(node => ({
+      ...node,
+      data: {
+        ...node.data,
+        isEditing: node.id === screenId
+      }
+    })));
+
+    try {
+      const response = await fetch('/api/edit-screen', {
+        method: 'POST',
+        signal: editAbortControllerRef.current.signal,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          screenId,
+          currentHtml,
+          userRequest,
+          // Pass structured element info if available (P0 fix)
+          selectedElement: cssSelector ? {
+            id: selectedElementId,
+            cssSelector,
+            html: elementHtml?.substring(0, 1000)
+          } : undefined,
+          projectContext: currentPromptRef.current,
+        }),
+      });
+
+      if (!response.body) throw new Error("No response body");
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            const event = JSON.parse(line.slice(6));
+
+            if (event.type === 'patches') {
+              const { patches, explanation } = event.data;
+              console.log('[Edit] Received patches:', patches.length, 'explanation:', explanation);
+
+              // Apply patches to the HTML
+              const result = applyPatches(currentHtml, patches as PatchOperation[]);
+              console.log('[Edit] Patch result:', result.appliedPatches, 'applied,', result.errors.length, 'errors');
+
+              if (result.appliedPatches > 0) {
+                // Store in pending changes (don't persist yet)
+                setPendingChanges(prev => {
+                  const newMap = new Map(prev);
+                  const existing = newMap.get(screenId);
+                  // Keep original HTML from first edit, update newHtml
+                  newMap.set(screenId, {
+                    originalHtml: existing?.originalHtml || currentHtml,
+                    newHtml: result.html,
+                  });
+                  return newMap;
+                });
+
+                // Update the node in ReactFlow with hasPendingChanges flag
+                setNodes(prev => prev.map(node =>
+                  node.id === screenId
+                    ? { ...node, data: { ...node.data, html: result.html, isEditing: false, hasPendingChanges: true } }
+                    : node
+                ));
+
+                // Update the ref (local state only, not persisted)
+                const screenRef = generatedScreensRef.current.find(s => s.id === screenId);
+                if (screenRef) {
+                  screenRef.html = result.html;
+                }
+
+                // Show success feedback
+                console.log('[Edit] Successfully applied', result.appliedPatches, 'patch(es) - changes pending save');
+
+                // Increment edits counter
+                incrementEditsUsed().catch(err => console.error('[Edits] Failed to increment:', err));
+              } else if (result.errors.length > 0) {
+                console.error('[Edit] Patch errors:', result.errors);
+              }
+            }
+
+            if (event.type === 'error') {
+              console.error('[Edit] API error:', event.data);
+            }
+          }
+        }
+      }
+    } catch (error) {
+      if (error instanceof Error && error.name === 'AbortError') {
+        console.log('[Edit] Request cancelled by user');
+      } else {
+        console.error('[Edit] Error:', error);
+      }
+    } finally {
+      editAbortControllerRef.current = null;
+      setIsApplyingPatch(false);
+      // Clear editing state
+      setNodes(prev => prev.map(node => ({
+        ...node,
+        data: {
+          ...node.data,
+          isEditing: false
+        }
+      })));
+    }
+  }, [setNodes, hasActiveSubscription, editsData, incrementEditsUsed]);
+
+  // Cancel ongoing edit request
+  const handleCancelEdit = useCallback(() => {
+    if (editAbortControllerRef.current) {
+      editAbortControllerRef.current.abort();
+      editAbortControllerRef.current = null;
+      console.log('[Edit] Cancelling edit request');
+    }
+  }, []);
+
+  // Save all pending changes to Convex
+  const handleSaveChanges = useCallback(async (screenId: string) => {
+    const pending = pendingChanges.get(screenId);
+    if (!pending) return;
+
+    // Persist to Convex if project is saved
+    if (savedProjectId) {
+      try {
+        await updateScreenHtml({
+          projectId: savedProjectId,
+          screenId,
+          html: pending.newHtml,
+        });
+        console.log('[Edit] Saved to Convex');
+      } catch (e) {
+        console.error('[Edit] Failed to save to Convex:', e);
+        return; // Don't clear pending if save failed
+      }
+    }
+
+    // Clear pending changes for this screen
+    setPendingChanges(prev => {
+      const newMap = new Map(prev);
+      newMap.delete(screenId);
+      return newMap;
+    });
+
+    // Update node to remove hasPendingChanges flag
+    setNodes(prev => prev.map(node =>
+      node.id === screenId
+        ? { ...node, data: { ...node.data, hasPendingChanges: false } }
+        : node
+    ));
+
+    console.log('[Edit] Changes saved for screen:', screenId);
+  }, [pendingChanges, savedProjectId, updateScreenHtml, setNodes]);
+
+  // Discard pending changes and revert to original HTML
+  const handleDiscardChanges = useCallback((screenId: string) => {
+    const pending = pendingChanges.get(screenId);
+    if (!pending) return;
+
+    // Revert node HTML to original
+    setNodes(prev => prev.map(node =>
+      node.id === screenId
+        ? { ...node, data: { ...node.data, html: pending.originalHtml, hasPendingChanges: false } }
+        : node
+    ));
+
+    // Revert the ref
+    const screenRef = generatedScreensRef.current.find(s => s.id === screenId);
+    if (screenRef) {
+      screenRef.html = pending.originalHtml;
+    }
+
+    // Clear pending changes for this screen
+    setPendingChanges(prev => {
+      const newMap = new Map(prev);
+      newMap.delete(screenId);
+      return newMap;
+    });
+
+    console.log('[Edit] Changes discarded for screen:', screenId);
+  }, [pendingChanges, setNodes]);
 
   // Restore workspace state when a project is loaded from URL
   useEffect(() => {
     if (loadedProject && loadedProjectId) {
       console.log('[Project] Restoring workspace from project:', loadedProject._id);
+
+      // Set savedProjectId so edits can be persisted
+      setSavedProjectId(loadedProject._id);
 
       // Populate refs from loaded project
       currentPromptRef.current = loadedProject.prompt;
@@ -596,6 +928,8 @@ export default function Home() {
               onExpand: handleExpand,
               onShowCode: handleShowCode,
               onFocus: handleFocus,
+              onOpenEditor: handleOpenEditor,
+              hasPendingChanges: false,
             },
           };
         });
@@ -622,6 +956,8 @@ export default function Home() {
               onExpand: handleExpand,
               onShowCode: handleShowCode,
               onFocus: handleFocus,
+              onOpenEditor: handleOpenEditor,
+              hasPendingChanges: false,
             },
           };
         });
@@ -680,28 +1016,18 @@ export default function Home() {
         ]);
       }
 
-      // Fit view after nodes are set (retry until instance is ready)
-      const fitViewWithRetry = (attempt = 0) => {
-        const instance = reactFlowInstance.current as ReactFlowInstance & {
-          updateNodeInternals?: (ids: string[]) => void;
-        };
-
-        if (instance) {
-          instance.updateNodeInternals?.(newNodes.map(n => n.id));
-          instance.fitView({ duration: 800, padding: 0.15 });
-        } else if (attempt < 5) {
-          setTimeout(() => fitViewWithRetry(attempt + 1), 120);
-        }
-      };
-
-      fitViewWithRetry();
+      // Fit view after nodes are set (wait for node internals so edges align)
+      fitViewOnReady(newNodes.map(n => n.id), { duration: 800, padding: 0.15 });
 
       // Clear the loaded project ID to prevent re-triggering
       setLoadedProjectId(null);
 
+      // Mark as loaded project to disable step editing
+      setIsLoadedProject(true);
+
       console.log('[Project] Workspace restored with', loadedProject.screens.length, 'screens and', restoredFlows.length, 'flows');
     }
-  }, [loadedProject, loadedProjectId, viewMode, handleExpand, handleShowCode, handleFocus, setNodes, setEdges]);
+  }, [loadedProject, loadedProjectId, viewMode, handleExpand, handleShowCode, handleFocus, fitViewOnReady, setNodes, setEdges]);
 
   const updateLastMessage = useCallback((updater: (msg: Message) => Message) => {
     setMessages(prev => {
@@ -1574,6 +1900,8 @@ export default function Home() {
                 onExpand: handleExpand,
                 onShowCode: handleShowCode,
                 onFocus: handleFocus,
+                onOpenEditor: handleOpenEditor,
+                hasPendingChanges: false,
               },
             };
           });
@@ -1602,6 +1930,8 @@ export default function Home() {
                 onExpand: handleExpand,
                 onShowCode: handleShowCode,
                 onFocus: handleFocus,
+                onOpenEditor: handleOpenEditor,
+                hasPendingChanges: false,
               },
             };
           });
@@ -1649,10 +1979,8 @@ export default function Home() {
           },
         ]);
 
-        // Fit view after nodes are set
-        setTimeout(() => {
-          reactFlowInstance.current?.fitView({ duration: 800, padding: 0.15 });
-        }, 100);
+        // Fit view after nodes are set (wait for node internals so edges align)
+        fitViewOnReady(newNodes.map(n => n.id), { duration: 800, padding: 0.15 });
 
         // Clear resume state
         setResumeState(null);
@@ -1694,7 +2022,7 @@ export default function Home() {
         }, 1000);
       }
     }
-  }, [resumeAfterSubscription, hasActiveSubscription, resumeState, viewMode, handleExpand, handleShowCode, handleFocus, setNodes, setEdges, runGeneration, processUserPrompt]);
+  }, [resumeAfterSubscription, hasActiveSubscription, resumeState, viewMode, handleExpand, handleShowCode, handleFocus, fitViewOnReady, setNodes, setEdges, runGeneration, processUserPrompt]);
 
   const handleClarificationSubmit = async (answers: ClarificationAnswer[]) => {
     const answer = answers[0];
@@ -1757,6 +2085,102 @@ export default function Home() {
     });
   };
 
+  // ===== EDIT STEP HANDLERS =====
+
+  const handleEditStep = (type: 'clarification' | 'design_system' | 'architecture', messageIndex: number, questionId?: string) => {
+    // Don't allow editing during generation
+    if (isLoading) return;
+    setEditingStep({ type, messageIndex, questionId });
+  };
+
+  const handleConfirmEditClarification = async (answer: ClarificationAnswer) => {
+    if (!editingStep || editingStep.type !== 'clarification') return;
+
+    // 1. Find the index in conversationHistory for this question
+    const historyIndex = conversationHistoryRef.current.findIndex(
+      t => t.type === 'qa' && t.question === answer.question
+    );
+
+    // 2. Truncate conversationHistory after this question (keep items before it)
+    if (historyIndex >= 0) {
+      conversationHistoryRef.current = conversationHistoryRef.current.slice(0, historyIndex);
+    }
+
+    // 3. Add the new answer
+    conversationHistoryRef.current.push({
+      type: 'qa',
+      question: answer.question,
+      answer: answer.answer
+    });
+
+    // 4. Truncate messages after the edited message
+    setMessages(prev => {
+      const truncated = prev.slice(0, editingStep.messageIndex + 1);
+      // Update the edited message with the new answer
+      truncated[editingStep.messageIndex] = {
+        ...truncated[editingStep.messageIndex],
+        submittedAnswer: answer
+      };
+      return truncated;
+    });
+
+    // 5. Reset all subsequent refs (design system, plan, screens)
+    plannedScreensRef.current = [];
+    plannedFlowsRef.current = [];
+    generatedScreensRef.current = [];
+    selectedDesignSystemRef.current = null;
+    designSystemOptionsRef.current = null;
+    setNodes([]);
+    setEdges([]);
+
+    // 6. Exit edit mode
+    setEditingStep(null);
+
+    // 7. Re-run generation from this point
+    await runGeneration({
+      prompt: currentPromptRef.current,
+      conversationHistory: conversationHistoryRef.current
+    });
+  };
+
+  const handleConfirmEditDesignSystem = async (selection: DesignSystemSelection) => {
+    if (!editingStep || editingStep.type !== 'design_system') return;
+
+    // 1. Update the selection
+    selectedDesignSystemRef.current = selection;
+
+    // 2. Truncate messages after the edited message
+    setMessages(prev => {
+      const truncated = prev.slice(0, editingStep.messageIndex + 1);
+      // Update the edited message with the new selection
+      truncated[editingStep.messageIndex] = {
+        ...truncated[editingStep.messageIndex],
+        submittedDesignSystem: selection
+      };
+      return truncated;
+    });
+
+    // 3. Reset subsequent refs (plan + screens only)
+    plannedScreensRef.current = [];
+    plannedFlowsRef.current = [];
+    generatedScreensRef.current = [];
+    setNodes([]);
+    setEdges([]);
+
+    // 4. Exit edit mode
+    setEditingStep(null);
+
+    // 5. Re-run generation from design system complete
+    await runGeneration({
+      prompt: currentPromptRef.current,
+      conversationHistory: conversationHistoryRef.current,
+      selectedDesignSystem: selection,
+      designSystemComplete: true
+    });
+  };
+
+  // ===== END EDIT STEP HANDLERS =====
+
   const handlePlanApprove = async () => {
     const screens = plannedScreensRef.current;
     const flows = plannedFlowsRef.current;
@@ -1794,8 +2218,10 @@ export default function Home() {
           onExpand: handleExpand,
           onShowCode: handleShowCode,
           onFocus: handleFocus,
+          onOpenEditor: handleOpenEditor,
           viewMode: currentMode,
-          isGenerating: index === 0 // First screen starts generating immediately
+          isGenerating: index === 0, // First screen starts generating immediately
+          hasPendingChanges: false,
         },
         style: { opacity: 1, transition: 'opacity 0.5s' }
       };
@@ -1846,6 +2272,7 @@ export default function Home() {
     messagesRef.current = [];
     setIsResetModalOpen(false);
     setSavedProjectId(null);
+    setIsLoadedProject(false);
     setIsSidebarOpen(true);
     setInput('');
   };
@@ -1958,10 +2385,11 @@ export default function Home() {
         onExpand: handleExpand,
         onShowCode: handleShowCode,
         onFocus: handleFocus,
+        onOpenEditor: handleOpenEditor,
         viewMode
       }
     })));
-  }, [handleExpand, handleShowCode, handleFocus, viewMode, setNodes]);
+  }, [handleExpand, handleShowCode, handleFocus, handleOpenEditor, viewMode, setNodes]);
 
   const isLastMessageInteractive = () => {
     if (messages.length === 0) return false;
@@ -2223,6 +2651,11 @@ export default function Home() {
                             onAutoGenerate={!msg.submittedAnswer ? handleAutoGenerate : undefined}
                             submittedAnswer={msg.submittedAnswer}
                             startIndex={msg.questionIndex || 1}
+                            // Edit mode props - disabled for loaded projects
+                            onEdit={isLoadedProject ? undefined : () => handleEditStep('clarification', idx, msg.question?.id)}
+                            isEditing={editingStep?.type === 'clarification' && editingStep.messageIndex === idx}
+                            onConfirmEdit={handleConfirmEditClarification}
+                            disabled={isLoading || isLoadedProject}
                           />
                         )}
 
@@ -2232,6 +2665,11 @@ export default function Home() {
                             options={msg.designSystemOptions}
                             onSubmit={msg.isDesignSystemReady ? handleDesignSystemSelect : undefined}
                             submittedSelection={msg.submittedDesignSystem}
+                            // Edit mode props - disabled for loaded projects
+                            onEdit={isLoadedProject ? undefined : () => handleEditStep('design_system', idx)}
+                            isEditing={editingStep?.type === 'design_system' && editingStep.messageIndex === idx}
+                            onConfirmEdit={handleConfirmEditDesignSystem}
+                            disabled={isLoading || isLoadedProject}
                           />
                         )}
 
@@ -2348,13 +2786,6 @@ export default function Home() {
                       <Download size={14} />
                       <span>Export Screens</span>
                     </button>
-                    <button
-                      onClick={() => setIsResetModalOpen(true)}
-                      className="h-9 w-9 bg-[#252526] hover:bg-red-500/10 border border-[#3e3e42] hover:border-red-500/50 text-zinc-400 hover:text-red-400 rounded-lg flex items-center justify-center transition-all group cursor-pointer"
-                      title="Reset Project"
-                    >
-                      <RotateCcw size={14} className="group-hover:-rotate-180 transition-transform duration-500" />
-                    </button>
                   </div>
                 )}
               </div>
@@ -2362,8 +2793,8 @@ export default function Home() {
 
             {/* RIGHT SIDE: GRAPH */}
             <motion.div
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
               transition={{ duration: 0.8, delay: 0.2 }}
               className="flex-1 relative bg-[#1e1e1e] h-full"
             >
@@ -2423,23 +2854,26 @@ export default function Home() {
 
                 <HelpBubble />
 
-                {/* Generations counter bubble */}
+                {/* Generations & Edits counter bubble */}
                 {isAuthenticated && generationsData && (
-                  <div className="absolute top-6 right-6 z-50 flex items-center gap-2 bg-[#252526]/90 backdrop-blur-md border border-[#3e3e42] px-3 py-2 rounded-full shadow-xl ring-1 ring-black/20">
-                    <div className={`w-2 h-2 rounded-full ${generationsData.remaining === -1
-                      ? 'bg-emerald-400'
-                      : generationsData.remaining > 5
+                  <div className="absolute top-6 right-6 z-50 flex items-center gap-4 bg-[#252526]/90 backdrop-blur-md border border-[#3e3e42] px-3 py-2 rounded-full shadow-xl ring-1 ring-black/20">
+                    {/* Generations counter */}
+                    <div className="flex items-center gap-2">
+                      <div className={`w-2 h-2 rounded-full ${generationsData.remaining === -1
                         ? 'bg-emerald-400'
-                        : generationsData.remaining > 0
-                          ? 'bg-amber-400'
-                          : 'bg-red-400'
-                      }`} />
-                    <span className="text-[11px] text-zinc-400">
-                      {generationsData.remaining === -1
-                        ? 'Unlimited'
-                        : `${generationsData.remaining} generation${generationsData.remaining > 1 ? 's' : ''} left`
-                      }
-                    </span>
+                        : generationsData.remaining > 5
+                          ? 'bg-emerald-400'
+                          : generationsData.remaining > 0
+                            ? 'bg-amber-400'
+                            : 'bg-red-400'
+                        }`} />
+                      <span className="text-[11px] text-zinc-400">
+                        {generationsData.remaining === -1
+                          ? 'Unlimited'
+                          : `${generationsData.remaining} generation${generationsData.remaining > 1 ? 's' : ''} left`
+                        }
+                      </span>
+                    </div>
                   </div>
                 )}
 
@@ -2630,6 +3064,31 @@ export default function Home() {
           </div>
         )
       }
+
+      {/* SCREEN EDITOR MODAL */}
+      {editorScreenId && (() => {
+        const editorNode = nodes.find(n => n.id === editorScreenId);
+        const editorHtml = (editorNode?.data?.html as string) || '';
+        const editorLabel = (editorNode?.data?.label as string) || 'Screen';
+        const hasPending = pendingChanges.has(editorScreenId);
+
+        return (
+          <ScreenEditor
+            screenId={editorScreenId}
+            screenLabel={editorLabel}
+            html={editorHtml}
+            viewMode={viewMode}
+            isEditing={isApplyingPatch}
+            hasPendingChanges={hasPending}
+            editsData={editsData}
+            onClose={handleCloseEditor}
+            onEdit={handleEditScreen}
+            onSave={handleSaveChanges}
+            onDiscard={handleDiscardChanges}
+            onCancelEdit={handleCancelEdit}
+          />
+        );
+      })()}
 
       {/* RESET CONFIRMATION MODAL */}
       {
