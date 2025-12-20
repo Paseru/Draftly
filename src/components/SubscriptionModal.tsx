@@ -10,7 +10,7 @@ interface SubscriptionModalProps {
     isOpen: boolean;
     onClose: () => void;
     onBeforeRedirect?: () => void;
-    variant?: 'out_of_credits' | 'upgrade_screens';
+    variant?: 'out_of_credits' | 'out_of_edits' | 'upgrade_screens';
 }
 
 // Icon mapping for plans
@@ -26,6 +26,11 @@ const MODAL_CONTENT = {
         title: "Oh no, you've run out of credits!",
         description: "Your free trial is over. Subscribe now to continue creating your design.",
         icon: Rocket,
+    },
+    out_of_edits: {
+        title: "You've used all your edits",
+        description: "Upgrade your plan to get more screen edits and keep refining your designs.",
+        icon: Zap,
     },
     upgrade_screens: {
         title: "Unlock unlimited screens",

@@ -107,7 +107,7 @@ export default function Home() {
   const [isResetModalOpen, setIsResetModalOpen] = useState(false);
   const [isOverloadModalOpen, setIsOverloadModalOpen] = useState(false);
   const [isSubscriptionModalOpen, setIsSubscriptionModalOpen] = useState(false);
-  const [subscriptionModalVariant, setSubscriptionModalVariant] = useState<'out_of_credits' | 'upgrade_screens'>('out_of_credits');
+  const [subscriptionModalVariant, setSubscriptionModalVariant] = useState<'out_of_credits' | 'out_of_edits' | 'upgrade_screens'>('out_of_credits');
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
   const [pendingPrompt, setPendingPrompt] = useState<string | null>(null);
   const [loadedProjectId, setLoadedProjectId] = useState<string | null>(null);
@@ -713,6 +713,7 @@ export default function Home() {
     // Simplified: same logic for free and paid users - just check remaining edits
     if (editsData && editsData.remaining === 0) {
       console.log('[Paywall] User has no edits remaining, showing subscription modal');
+      setSubscriptionModalVariant('out_of_edits');
       setIsSubscriptionModalOpen(true);
       return;
     }
