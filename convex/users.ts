@@ -64,6 +64,7 @@ export const resetFreeTrial = internalMutation({
 });
 
 // Get the number of generations remaining for the current user
+// Uses remainingGenerations directly from the database
 export const getGenerationsRemaining = query({
     args: {},
     handler: async (ctx) => {
@@ -77,55 +78,41 @@ export const getGenerationsRemaining = query({
             return null;
         }
 
-        // Check if user has an active subscription in their record
-        if (!user.subscriptionPriceId || user.subscriptionStatus !== "active") {
-            // No subscription - use remainingGenerations directly from DB
-            // Fallback to hasUsedFreeTrial logic only if remainingGenerations is not set
-            const remaining = user.remainingGenerations !== undefined
-                ? user.remainingGenerations
-                : (user.hasUsedFreeTrial ? 0 : 1);
+        // Determine plan based on subscription status
+        let plan: "free" | "starter" | "pro" | "enterprise" = "free";
 
-            return {
-                remaining,
-                total: 1,
-                plan: "free"
-            };
+        if (user.subscriptionPriceId && user.subscriptionStatus === "active") {
+            if (user.subscriptionPriceId === STRIPE_PRICES.pro) {
+                plan = "pro";
+            } else if (user.subscriptionPriceId === STRIPE_PRICES.enterprise) {
+                plan = "enterprise";
+            } else {
+                plan = "starter";
+            }
         }
 
-        // Determine plan based on priceId from users table (using centralized config)
-        let plan: "starter" | "pro" | "enterprise" = "starter";
-
-        if (user.subscriptionPriceId === STRIPE_PRICES.pro) {
-            plan = "pro";
-        } else if (user.subscriptionPriceId === STRIPE_PRICES.enterprise) {
-            plan = "enterprise";
-        }
-
-        const limit = PLAN_LIMITS[plan];
+        const limit = plan === "free" ? 1 : PLAN_LIMITS[plan];
 
         // For unlimited plans
         if (limit === -1) {
             return { remaining: -1, total: -1, plan };
         }
 
-        // Check if we need to reset the counter (new month)
-        const now = Date.now();
-        const resetAt = user.generationsResetAt || 0;
-        const oneMonthAgo = now - (30 * 24 * 60 * 60 * 1000); // 30 days in milliseconds
-
-        // If the reset date is more than a month ago, the counter should be 0
-        const generationsUsed = resetAt < oneMonthAgo ? 0 : (user.generationsUsed || 0);
+        // Use remainingGenerations directly from database
+        // Fallback to hasUsedFreeTrial logic only if remainingGenerations is not set
+        const remaining = user.remainingGenerations !== undefined
+            ? user.remainingGenerations
+            : (user.hasUsedFreeTrial ? 0 : 1);
 
         return {
-            remaining: Math.max(0, limit - generationsUsed),
+            remaining,
             total: limit,
-            plan,
-            used: generationsUsed
+            plan
         };
     },
 });
 
-// Increment the generations used counter
+// Decrement the remaining generations counter
 export const incrementGenerationsUsed = mutation({
     args: {},
     handler: async (ctx) => {
@@ -139,53 +126,17 @@ export const incrementGenerationsUsed = mutation({
             throw new Error("User not found");
         }
 
-        const now = Date.now();
-        const resetAt = user.generationsResetAt || 0;
-        const oneMonthAgo = now - (30 * 24 * 60 * 60 * 1000);
+        // Simply decrement remainingGenerations
+        const currentRemaining = user.remainingGenerations ?? 0;
+        const newRemaining = Math.max(0, currentRemaining - 1);
 
-        let newGenerationsUsed = (user.generationsUsed || 0) + 1;
-
-        // Reset if older than a month
-        if (resetAt < oneMonthAgo) {
-            newGenerationsUsed = 1;
-        }
-
+        // For free users, also mark trial as used
         const isSubscribed = user.subscriptionPriceId && user.subscriptionStatus === "active";
 
-        // Free users get a single full generation. Mark the trial as used as soon as a generation completes.
-        if (!isSubscribed) {
-            const updates: any = {
-                generationsUsed: newGenerationsUsed,
-                hasUsedFreeTrial: true,
-                remainingGenerations: 0,
-            };
-
-            if (resetAt < oneMonthAgo) {
-                updates.generationsResetAt = now;
-            }
-
-            await ctx.db.patch(userId, updates);
-            return { success: true };
-        }
-
-        // Subscription logic
-        let plan: "starter" | "pro" | "enterprise" = "starter";
-        if (user.subscriptionPriceId === STRIPE_PRICES.pro) plan = "pro";
-        else if (user.subscriptionPriceId === STRIPE_PRICES.enterprise) plan = "enterprise";
-
-        const limit = PLAN_LIMITS[plan];
-        const remaining = limit === -1 ? 9999 : Math.max(0, limit - newGenerationsUsed);
-
-        const updates: any = {
-            generationsUsed: newGenerationsUsed,
-            remainingGenerations: remaining
-        };
-
-        if (resetAt < oneMonthAgo) {
-            updates.generationsResetAt = now;
-        }
-
-        await ctx.db.patch(userId, updates);
+        await ctx.db.patch(userId, {
+            remainingGenerations: newRemaining,
+            ...(isSubscribed ? {} : { hasUsedFreeTrial: true })
+        });
 
         return { success: true };
     },
@@ -211,7 +162,7 @@ export const resetMonthlyGenerations = internalMutation({
 // ============================================================================
 
 // Get the number of edits remaining for the current user
-// Simplified: both free and paid users have edit quotas
+// Uses remainingEdits directly from the database
 export const getEditsRemaining = query({
     args: {},
     handler: async (ctx) => {
@@ -245,25 +196,18 @@ export const getEditsRemaining = query({
             return { remaining: -1, total: -1, plan };
         }
 
-        // Check if we need to reset the counter (new month)
-        const now = Date.now();
-        const resetAt = user.editsResetAt || 0;
-        const oneMonthAgo = now - (30 * 24 * 60 * 60 * 1000);
-
-        // If the reset date is more than a month ago, the counter should be 0
-        const editsUsed = resetAt < oneMonthAgo ? 0 : (user.editsUsed || 0);
+        // Use remainingEdits directly from database
+        const remaining = user.remainingEdits ?? 0;
 
         return {
-            remaining: Math.max(0, limit - editsUsed),
+            remaining,
             total: limit,
-            plan,
-            used: editsUsed
+            plan
         };
     },
 });
 
-// Increment the edits used counter
-// Simplified: works for both free and paid users
+// Decrement the remaining edits counter
 export const incrementEditsUsed = mutation({
     args: {},
     handler: async (ctx) => {
@@ -277,38 +221,13 @@ export const incrementEditsUsed = mutation({
             throw new Error("User not found");
         }
 
-        const now = Date.now();
-        const resetAt = user.editsResetAt || 0;
-        const oneMonthAgo = now - (30 * 24 * 60 * 60 * 1000);
+        // Simply decrement remainingEdits
+        const currentRemaining = user.remainingEdits ?? 0;
+        const newRemaining = Math.max(0, currentRemaining - 1);
 
-        let newEditsUsed = (user.editsUsed || 0) + 1;
-
-        // Reset if older than a month
-        if (resetAt < oneMonthAgo) {
-            newEditsUsed = 1;
-        }
-
-        // Determine plan (free if no active subscription)
-        let plan: "free" | "starter" | "pro" | "enterprise" = "free";
-        if (user.subscriptionPriceId && user.subscriptionStatus === "active") {
-            if (user.subscriptionPriceId === STRIPE_PRICES.pro) plan = "pro";
-            else if (user.subscriptionPriceId === STRIPE_PRICES.enterprise) plan = "enterprise";
-            else plan = "starter";
-        }
-
-        const limit = EDIT_LIMITS[plan];
-        const remaining = limit === -1 ? 9999 : Math.max(0, limit - newEditsUsed);
-
-        const updates: Record<string, unknown> = {
-            editsUsed: newEditsUsed,
-            remainingEdits: remaining
-        };
-
-        if (resetAt < oneMonthAgo) {
-            updates.editsResetAt = now;
-        }
-
-        await ctx.db.patch(userId, updates);
+        await ctx.db.patch(userId, {
+            remainingEdits: newRemaining
+        });
 
         return { success: true };
     },
