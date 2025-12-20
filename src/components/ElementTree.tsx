@@ -6,7 +6,7 @@ import {
   Type,
   RectangleHorizontal,
   Link,
-  Image,
+  Image as ImageIcon,
   Sparkles,
   TextCursor,
   List,
@@ -139,7 +139,7 @@ function getElementIcon(type: ElementType) {
     case 'link':
       return <Link {...iconProps} />;
     case 'image':
-      return <Image {...iconProps} />;
+      return <ImageIcon {...iconProps} />;
     case 'icon':
       return <Sparkles {...iconProps} />;
     case 'input':
@@ -261,7 +261,7 @@ const TreeNode = memo(({
 
         {node.hasText && (
           <span className="text-zinc-500 truncate ml-1 font-normal">
-            "{node.textContent}"
+            &quot;{node.textContent}&quot;
           </span>
         )}
       </div>
@@ -304,15 +304,18 @@ function collectIdsToDepth(nodes: ElementTreeNode[], maxDepth: number, currentDe
 }
 
 const ElementTree = memo(({ tree, selectedId, hoveredId, onSelect, onHover }: ElementTreeProps) => {
-  const resolvedTree = tree ?? [];
+  const resolvedTree = useMemo(() => tree ?? [], [tree]);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(() => new Set());
   const hasInitializedRef = useRef(false);
 
   useEffect(() => {
     if (!hasInitializedRef.current && resolvedTree.length > 0) {
       const initialIds = collectIdsToDepth(resolvedTree, 2);
-      setExpandedIds(new Set(initialIds));
+      const rafId = requestAnimationFrame(() => {
+        setExpandedIds(new Set(initialIds));
+      });
       hasInitializedRef.current = true;
+      return () => cancelAnimationFrame(rafId);
     }
   }, [resolvedTree]);
 
@@ -339,11 +342,14 @@ const ElementTree = memo(({ tree, selectedId, hoveredId, onSelect, onHover }: El
         currentId = currentId ? `${currentId}-${part}` : part;
         idsToExpand.push(currentId);
       }
-      setExpandedIds(prev => {
-        const next = new Set(prev);
-        idsToExpand.forEach(id => next.add(id));
-        return next;
+      const rafId = requestAnimationFrame(() => {
+        setExpandedIds(prev => {
+          const next = new Set(prev);
+          idsToExpand.forEach(id => next.add(id));
+          return next;
+        });
       });
+      return () => cancelAnimationFrame(rafId);
     }
   }, [selectedId]);
 

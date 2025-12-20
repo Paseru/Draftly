@@ -47,7 +47,7 @@ import { ConversationTurn, ScreenFlow } from '@/ai/graph';
 import { AnimatePresence, motion } from 'framer-motion';
 import AnimatedEdge from '@/components/AnimatedEdge';
 import { computeFlowLayout, getLayoutConfig } from '@/lib/layoutUtils';
-import { applyPatches, PatchOperation, parsePatchResponse } from '@/lib/patchUtils';
+import { applyPatches, PatchOperation } from '@/lib/patchUtils';
 
 interface PlannedScreen {
   id: string;
@@ -113,7 +113,7 @@ export default function Home() {
   const completedScreensCountRef = useRef<number>(0);
 
   // Edit mode states
-  const [selectedScreenId, setSelectedScreenId] = useState<string | null>(null);
+  const [, setSelectedScreenId] = useState<string | null>(null);
   const [editorScreenId, setEditorScreenId] = useState<string | null>(null);
   const [isApplyingPatch, setIsApplyingPatch] = useState(false);
   // Track pending changes per screen: screenId -> { newHtml, originalHtml }
@@ -629,18 +629,6 @@ export default function Home() {
     }
   }, [setNodes]);
 
-  // Deselect screen
-  const handleDeselect = useCallback(() => {
-    setSelectedScreenId(null);
-    setNodes(prev => prev.map(node => ({
-      ...node,
-      data: {
-        ...node.data,
-        isSelected: false
-      }
-    })));
-  }, [setNodes]);
-
   // Open fullscreen editor for a screen
   const handleOpenEditor = useCallback((screenId: string) => {
     setEditorScreenId(screenId);
@@ -796,7 +784,7 @@ export default function Home() {
         }
       })));
     }
-  }, [setNodes, hasActiveSubscription, editsData, incrementEditsUsed]);
+  }, [setNodes, editsData, incrementEditsUsed]);
 
   // Cancel ongoing edit request
   const handleCancelEdit = useCallback(() => {
@@ -1027,7 +1015,7 @@ export default function Home() {
 
       console.log('[Project] Workspace restored with', loadedProject.screens.length, 'screens and', restoredFlows.length, 'flows');
     }
-  }, [loadedProject, loadedProjectId, viewMode, handleExpand, handleShowCode, handleFocus, fitViewOnReady, setNodes, setEdges]);
+  }, [loadedProject, loadedProjectId, viewMode, handleExpand, handleShowCode, handleFocus, handleOpenEditor, fitViewOnReady, setNodes, setEdges]);
 
   const updateLastMessage = useCallback((updater: (msg: Message) => Message) => {
     setMessages(prev => {
@@ -2022,7 +2010,7 @@ export default function Home() {
         }, 1000);
       }
     }
-  }, [resumeAfterSubscription, hasActiveSubscription, resumeState, viewMode, handleExpand, handleShowCode, handleFocus, fitViewOnReady, setNodes, setEdges, runGeneration, processUserPrompt]);
+  }, [resumeAfterSubscription, hasActiveSubscription, resumeState, viewMode, handleExpand, handleShowCode, handleFocus, handleOpenEditor, fitViewOnReady, setNodes, setEdges, runGeneration, processUserPrompt]);
 
   const handleClarificationSubmit = async (answers: ClarificationAnswer[]) => {
     const answer = answers[0];

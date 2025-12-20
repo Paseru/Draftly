@@ -91,7 +91,10 @@ export default function DesignSystemSelector({
   // Expand when entering edit mode
   useEffect(() => {
     if (isEditing) {
-      setIsExpanded(true);
+      const rafId = requestAnimationFrame(() => {
+        setIsExpanded(true);
+      });
+      return () => cancelAnimationFrame(rafId);
     }
   }, [isEditing]);
 

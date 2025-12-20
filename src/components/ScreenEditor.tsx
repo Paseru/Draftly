@@ -544,7 +544,7 @@ const SelectablePreview = memo(({
 
     window.addEventListener('message', handleMessage);
     return () => window.removeEventListener('message', handleMessage);
-  }, [onReady, onHover, onSelect, onTreeUpdate, onElementInfo]);
+  }, [iframeRef, onReady, onHover, onSelect, onTreeUpdate, onElementInfo]);
 
   // Send selection mode to iframe
   useEffect(() => {
@@ -565,7 +565,7 @@ const SelectablePreview = memo(({
         }, 50);
       }
     }
-  }, [selectionMode, isReady, selectedId]);
+  }, [iframeRef, selectionMode, isReady, selectedId]);
 
   useEffect(() => {
     if (isReady && iframeRef.current?.contentWindow) {
@@ -573,7 +573,7 @@ const SelectablePreview = memo(({
         type: 'request-element-tree'
       }, '*');
     }
-  }, [isReady, html]);
+  }, [iframeRef, isReady, html]);
 
   // Send highlight commands to iframe
   useEffect(() => {
@@ -591,7 +591,7 @@ const SelectablePreview = memo(({
         }, '*');
       }
     }
-  }, [selectedId, hoveredId, isReady]);
+  }, [iframeRef, selectedId, hoveredId, isReady]);
 
   const injectedHtml = injectEditorScript(html);
 
@@ -679,7 +679,10 @@ const ScreenEditor = memo(({
   }, []);
 
   useEffect(() => {
-    setElementTree(null);
+    const rafId = requestAnimationFrame(() => {
+      setElementTree(null);
+    });
+    return () => cancelAnimationFrame(rafId);
   }, [html]);
 
   const handleHover = useCallback((id: string | null) => {
