@@ -641,7 +641,7 @@ const SelectablePreview = memo(({
     <iframe
       ref={iframeRef}
       srcDoc={injectedHtml}
-      className="h-full w-full border-none bg-white rounded-lg"
+      className="h-full w-full border-none bg-white"
       title="Screen Preview"
       sandbox="allow-scripts allow-same-origin"
     />
@@ -671,8 +671,45 @@ const ScreenEditor = memo(({
   const [selectedCssSelector, setSelectedCssSelector] = useState<string | null>(null);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const [elementTree, setElementTree] = useState<ElementTreeNode[] | null>(null);
+  const [sidebarWidth, setSidebarWidth] = useState(342);
+  const [isResizing, setIsResizing] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
+
+  // Sidebar resize handlers
+  const handleResizeStart = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    setIsResizing(true);
+  }, []);
+
+  useEffect(() => {
+    if (!isResizing) return;
+
+    // Prevent text selection and set cursor during resize
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+
+    const handleMouseMove = (e: MouseEvent) => {
+      const newWidth = Math.min(Math.max(e.clientX, 200), 800);
+      setSidebarWidth(newWidth);
+    };
+
+    const handleMouseUp = () => {
+      setIsResizing(false);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+  }, [isResizing]);
 
   const handleReady = useCallback(() => {
     // Iframe is ready
@@ -814,10 +851,25 @@ const ScreenEditor = memo(({
         </div>
       </div>
 
+      {/* Resize Overlay - blocks iframe from capturing mouse events */}
+      {isResizing && (
+        <div className="fixed inset-0 z-[100] cursor-col-resize" />
+      )}
+
       {/* Main Content */}
       <div className="flex-1 flex overflow-hidden">
         {/* Left Sidebar: Element Tree + Edit Input */}
-        <div className="w-[380px] bg-[#1a1a1a] flex flex-col shrink-0 border-r border-[#3e3e42]">
+        <div
+          className="bg-[#1a1a1a] flex flex-col shrink-0 border-r border-[#3e3e42] relative"
+          style={{ width: sidebarWidth }}
+        >
+          {/* Resize Handle */}
+          <div
+            onMouseDown={handleResizeStart}
+            className="absolute top-0 -right-px w-[3px] h-full cursor-col-resize z-10 group"
+          >
+            <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-px bg-[#3e3e42] group-hover:bg-white/40 transition-colors" />
+          </div>
           {/* Tree Section */}
           <div className="flex-1 overflow-y-auto px-4 pt-3 pb-4 custom-scrollbar">
             <ElementTree
