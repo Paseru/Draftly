@@ -119,6 +119,15 @@ export const AgentState = Annotation.Root({
     reducer: (x, y) => x.concat(y),
     default: () => [],
   }),
+  // Max screens limit (for free users)
+  maxScreens: Annotation<number>({
+    reducer: (_, y) => y,
+    default: () => -1, // -1 = unlimited
+  }),
+  screensWereLimited: Annotation<boolean>({
+    reducer: (_, y) => y,
+    default: () => false,
+  }),
 });
 
 // --- Models ---
@@ -555,9 +564,25 @@ This creates a proper tree visualization where each node has exactly one parent.
     console.error("[Architect] Error:", e);
   }
 
+  // Apply screen limit for free users
+  let screensWereLimited = false;
+  const maxScreens = state.maxScreens;
+
+  if (maxScreens > 0 && plannedScreens.length > maxScreens) {
+    console.log(`[Architect] Limiting screens from ${plannedScreens.length} to ${maxScreens} (free user limit)`);
+    plannedScreens = plannedScreens.slice(0, maxScreens);
+
+    // Filter flows to only include valid screen references
+    const screenIds = new Set(plannedScreens.map(s => s.id));
+    plannedFlows = plannedFlows.filter(f => screenIds.has(f.from) && screenIds.has(f.to));
+
+    screensWereLimited = true;
+  }
+
   return {
     plannedScreens,
     plannedFlows,
+    screensWereLimited,
     // CRITICAL: Preserve currentScreenIndex in resume mode
     currentScreenIndex: isResumeMode ? currentScreenIndex : 0,
   };

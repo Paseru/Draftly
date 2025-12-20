@@ -4,6 +4,7 @@ import { buildVertexConfig } from "@/lib/vertex";
 import { convexAuthNextjsToken } from "@convex-dev/auth/nextjs/server";
 import { fetchQuery } from "convex/nextjs";
 import { api } from "../../../../convex/_generated/api";
+import { SCREEN_LIMITS } from "@/lib/stripePlans";
 
 export const runtime = 'nodejs';
 export const maxDuration = 300;
@@ -149,6 +150,10 @@ ${contextFlows}`;
         // Determine referenceHtml - use provided one for resume, otherwise from first generated screen
         const referenceHtml = providedReferenceHtml || (generatedScreens.length > 0 ? generatedScreens[0].html : '');
 
+        // Calculate maxScreens based on user plan
+        const userPlan = generationsData?.plan || 'free';
+        const maxScreens = SCREEN_LIMITS[userPlan as keyof typeof SCREEN_LIMITS] ?? SCREEN_LIMITS.free;
+
         const initialState = {
           userRequest: prompt,
           conversationHistory,
@@ -169,6 +174,8 @@ ${contextFlows}`;
           designSystemOptions,
           selectedDesignSystem,
           designSystemComplete: isResumeMode ? true : designSystemComplete,
+          // Screen limit for free users
+          maxScreens,
         };
 
         let lastNode = '';
@@ -432,7 +439,9 @@ ${contextFlows}`;
                 sendSSE(controller, 'step', { name: 'planning', status: 'completed' });
                 sendSSE(controller, 'plan_ready', {
                   plannedScreens: state.plannedScreens,
-                  plannedFlows: state.plannedFlows || []
+                  plannedFlows: state.plannedFlows || [],
+                  screensWereLimited: state.screensWereLimited || false,
+                  maxScreens: maxScreens > 0 ? maxScreens : undefined,
                 });
               }
             }

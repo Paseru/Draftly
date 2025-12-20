@@ -35,6 +35,14 @@ export const EDIT_LIMITS = {
     enterprise: -1, // Unlimited
 } as const;
 
+// Screen limits per generation (used for plan design)
+export const SCREEN_LIMITS = {
+    free: 3,        // Free users: max 3 screens per generation
+    starter: 10,
+    pro: 25,
+    enterprise: -1, // Unlimited
+} as const;
+
 // Helper to get plan ID from price ID
 export function getPlanFromPriceId(priceId: string): 'starter' | 'pro' | 'enterprise' | 'unknown' {
     if (priceId === STRIPE_PRICES.starter) return 'starter';

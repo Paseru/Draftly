@@ -9,6 +9,8 @@ import { PLAN_DETAILS } from '@/lib/stripePlans';
 interface SubscriptionModalProps {
     isOpen: boolean;
     onClose: () => void;
+    onBeforeRedirect?: () => void;
+    variant?: 'out_of_credits' | 'upgrade_screens';
 }
 
 // Icon mapping for plans
@@ -18,11 +20,26 @@ const planIcons = {
     enterprise: Crown,
 } as const;
 
-export default function SubscriptionModal({ isOpen, onClose }: SubscriptionModalProps) {
+// Header content based on variant
+const MODAL_CONTENT = {
+    out_of_credits: {
+        title: "Oh no, you've run out of credits!",
+        description: "Your free trial is over. Subscribe now to continue creating your design.",
+        icon: Rocket,
+    },
+    upgrade_screens: {
+        title: "Unlock unlimited screens",
+        description: "Upgrade your plan to generate more screens in a single generation.",
+        icon: Layers,
+    },
+} as const;
+
+export default function SubscriptionModal({ isOpen, onClose, onBeforeRedirect, variant = 'out_of_credits' }: SubscriptionModalProps) {
     const [loadingPlanId, setLoadingPlanId] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
 
     const createCheckout = useAction(api.stripe.createSubscriptionCheckout);
+    const content = MODAL_CONTENT[variant];
 
     // Fetch prices dynamically from Convex server
     const stripePricesData = useQuery(api.stripeConfig.getStripePrices);
@@ -43,6 +60,8 @@ export default function SubscriptionModal({ isOpen, onClose }: SubscriptionModal
             const result = await createCheckout({ priceId, returnUrl: currentPath });
 
             if (result.url) {
+                // Save state before redirecting to Stripe
+                onBeforeRedirect?.();
                 // Redirect to Stripe Checkout
                 window.location.href = result.url;
             } else {
@@ -83,12 +102,12 @@ export default function SubscriptionModal({ isOpen, onClose }: SubscriptionModal
                     <div>
                         <div className="flex items-center gap-2 mb-1">
                             <div className="p-1.5 bg-blue-500/10 rounded-md">
-                                <Rocket className="w-4 h-4 text-blue-400" />
+                                <content.icon className="w-4 h-4 text-blue-400" />
                             </div>
-                            <h3 className="text-sm font-semibold text-white">Oh no, you&apos;ve run out of credits!</h3>
+                            <h3 className="text-sm font-semibold text-white">{content.title}</h3>
                         </div>
                         <p className="text-xs text-zinc-400">
-                            Your free trial is over. Subscribe now to continue creating your design.
+                            {content.description}
                         </p>
                     </div>
                     <button

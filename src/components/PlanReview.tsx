@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ChevronDown, ChevronRight, RefreshCcw, Layers } from 'lucide-react';
+import { ChevronDown, ChevronRight, RefreshCcw, Layers, CreditCard } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 
 interface PlannedScreen {
@@ -13,9 +13,12 @@ interface Props {
   onApprove?: () => void;
   onRequestRefine?: () => void;
   isApproved?: boolean;
+  screensWereLimited?: boolean;
+  maxScreens?: number;
+  onUpgrade?: () => void;
 }
 
-export default function PlanReview({ screens, onApprove, onRequestRefine, isApproved = false }: Props) {
+export default function PlanReview({ screens, onApprove, onRequestRefine, isApproved = false, screensWereLimited = false, maxScreens, onUpgrade }: Props) {
   const [isExpanded, setIsExpanded] = useState(!isApproved);
 
   // Auto-collapse when approved
@@ -89,6 +92,27 @@ export default function PlanReview({ screens, onApprove, onRequestRefine, isAppr
             </div>
           ))}
         </div>
+
+        {/* Upsell message - show when screens were limited */}
+        {!isApproved && screensWereLimited && maxScreens && (
+          <div className="px-4 py-3 border-t border-[#27272a] bg-gradient-to-r from-purple-500/5 to-transparent">
+            <div className="flex items-start gap-2.5">
+              <CreditCard size={14} className="text-purple-400 mt-0.5 shrink-0" />
+              <div className="flex-1">
+                <p className="text-[11px] text-zinc-400 leading-relaxed">
+                  Your plan is limited to <span className="text-purple-400 font-medium">{maxScreens} screens</span>.{' '}
+                  <button
+                    onClick={onUpgrade}
+                    className="text-purple-400 hover:text-purple-300 underline underline-offset-2 transition-colors cursor-pointer"
+                  >
+                    Upgrade your plan
+                  </button>{' '}
+                  to generate unlimited screens in a single generation.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Actions - only show when not approved */}
         {!isApproved && onApprove && onRequestRefine && (

@@ -54,5 +54,13 @@ export const PLAN_DETAILS = {
     },
 } as const;
 
+// Screen limits per generation (client-safe version)
+export const SCREEN_LIMITS = {
+    free: 3,        // Free users: max 3 screens per generation
+    starter: 10,
+    pro: 25,
+    enterprise: -1, // Unlimited
+} as const;
+
 // Type exports
 export type PlanId = keyof typeof PLAN_DETAILS;

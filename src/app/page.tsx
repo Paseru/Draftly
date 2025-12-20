@@ -76,6 +76,8 @@ type Message = {
   plannedScreens?: PlannedScreen[] | null;
   isPlanReady?: boolean;
   isArchitectureApproved?: boolean;
+  screensWereLimited?: boolean;
+  maxScreens?: number;
   // Design steps
   designSteps?: Step[];
   // Completion message
@@ -105,6 +107,7 @@ export default function Home() {
   const [isResetModalOpen, setIsResetModalOpen] = useState(false);
   const [isOverloadModalOpen, setIsOverloadModalOpen] = useState(false);
   const [isSubscriptionModalOpen, setIsSubscriptionModalOpen] = useState(false);
+  const [subscriptionModalVariant, setSubscriptionModalVariant] = useState<'out_of_credits' | 'upgrade_screens'>('out_of_credits');
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
   const [pendingPrompt, setPendingPrompt] = useState<string | null>(null);
   const [loadedProjectId, setLoadedProjectId] = useState<string | null>(null);
@@ -299,6 +302,28 @@ export default function Home() {
   // Ref to track if we already processed Stripe return (prevents double trigger from OAuth effect)
   const stripeReturnProcessedRef = useRef(false);
 
+  // Save current generation state to localStorage before Stripe redirect
+  const saveGenerationState = useCallback(() => {
+    const stateToSave = {
+      prompt: currentPromptRef.current,
+      plannedScreens: plannedScreensRef.current,
+      plannedFlows: plannedFlowsRef.current,
+      generatedScreens: generatedScreensRef.current,
+      selectedDesignSystem: selectedDesignSystemRef.current,
+      conversationHistory: conversationHistoryRef.current,
+      currentScreenIndex: completedScreensCountRef.current,
+      // Save messages state for UI restoration
+      messages: messagesRef.current,
+    };
+    console.log('[Stripe] Saving generation state before redirect:', {
+      prompt: stateToSave.prompt?.substring(0, 50) + '...',
+      plannedScreensCount: stateToSave.plannedScreens?.length,
+      messagesCount: stateToSave.messages?.length,
+    });
+    localStorage.setItem('pendingGenerationState', JSON.stringify(stateToSave));
+    localStorage.setItem('pendingPrompt', stateToSave.prompt);
+  }, []);
+
   // Handle Stripe checkout success/cancel URL params AND project loading
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -356,13 +381,48 @@ export default function Home() {
           setResumeAfterSubscription(savedPrompt);
         }
       } else if (subscriptionStatus === 'canceled') {
-        // User canceled checkout - remove the param AND clear pending prompt
-        // This prevents the OAuth effect from restarting generation
+        // User canceled checkout - restore UI state without restarting generation
         window.history.replaceState({}, '', window.location.pathname);
+        console.log('[Stripe] Checkout canceled, restoring UI state');
+
+        // Load and restore UI state
+        const savedStateJson = localStorage.getItem('pendingGenerationState');
+        if (savedStateJson) {
+          try {
+            const savedState = JSON.parse(savedStateJson);
+            console.log('[Stripe] Restoring UI state after cancel:', {
+              prompt: savedState.prompt?.substring(0, 50) + '...',
+              plannedScreensCount: savedState.plannedScreens?.length,
+              messagesCount: savedState.messages?.length,
+            });
+
+            // Restore refs
+            currentPromptRef.current = savedState.prompt || '';
+            plannedScreensRef.current = savedState.plannedScreens || [];
+            plannedFlowsRef.current = savedState.plannedFlows || [];
+            generatedScreensRef.current = savedState.generatedScreens || [];
+            selectedDesignSystemRef.current = savedState.selectedDesignSystem || null;
+            conversationHistoryRef.current = savedState.conversationHistory || [];
+            completedScreensCountRef.current = savedState.currentScreenIndex || 0;
+
+            // Restore messages if saved
+            if (savedState.messages && savedState.messages.length > 0) {
+              setMessages(savedState.messages);
+              messagesRef.current = savedState.messages;
+              setHasStarted(true);
+            }
+
+            // Mark as processed
+            stripeReturnProcessedRef.current = true;
+          } catch (e) {
+            console.error('[Stripe] Failed to restore UI state:', e);
+          }
+        }
+
+        // Clear localStorage after restore
         localStorage.removeItem('pendingGenerationState');
         localStorage.removeItem('pendingPrompt');
         localStorage.removeItem('pendingPromptSource');
-        console.log('[Stripe] Checkout canceled, cleared all pending state');
       }
     }
   }, []);
@@ -1198,7 +1258,7 @@ export default function Home() {
 
               // Plan ready - complete thinking and show plan
               if (event.type === 'plan_ready') {
-                const { plannedScreens, plannedFlows } = event.data;
+                const { plannedScreens, plannedFlows, screensWereLimited, maxScreens } = event.data;
                 plannedScreensRef.current = plannedScreens;
                 plannedFlowsRef.current = plannedFlows || [];
                 const duration = Math.round((Date.now() - thinkingStartTimeRef.current) / 1000);
@@ -1207,7 +1267,9 @@ export default function Home() {
                   plannedScreens,
                   isPlanReady: true,
                   isThinkingComplete: true,
-                  thinkingDuration: duration
+                  thinkingDuration: duration,
+                  screensWereLimited: screensWereLimited || false,
+                  maxScreens: maxScreens,
                 }));
               }
 
@@ -2668,6 +2730,12 @@ export default function Home() {
                             onApprove={msg.isPlanReady ? handlePlanApprove : undefined}
                             onRequestRefine={msg.isPlanReady ? handleRequestRefine : undefined}
                             isApproved={msg.isArchitectureApproved}
+                            screensWereLimited={msg.screensWereLimited}
+                            maxScreens={msg.maxScreens}
+                            onUpgrade={() => {
+                              setSubscriptionModalVariant('upgrade_screens');
+                              setIsSubscriptionModalOpen(true);
+                            }}
                           />
                         )}
 
@@ -3140,6 +3208,8 @@ export default function Home() {
       <SubscriptionModal
         isOpen={isSubscriptionModalOpen}
         onClose={() => setIsSubscriptionModalOpen(false)}
+        onBeforeRedirect={saveGenerationState}
+        variant={subscriptionModalVariant}
       />
 
       <LoginModal

@@ -304,6 +304,23 @@ export const updateStripeCustomerId = internalMutation({
 });
 
 // ============================================================================
+// ADMIN: Set remaining edits for a user (temporary - for migration)
+// ============================================================================
+
+export const setRemainingEdits = internalMutation({
+    args: {
+        userId: v.id("users"),
+        remainingEdits: v.number(),
+    },
+    handler: async (ctx, args) => {
+        await ctx.db.patch(args.userId, {
+            remainingEdits: args.remainingEdits,
+        });
+        return { success: true };
+    },
+});
+
+// ============================================================================
 // QUERY INTERNE : Récupérer tous les emails des utilisateurs
 // Utilisée par l'action sendToAllUsers dans emails.ts
 // ============================================================================
@@ -316,6 +333,29 @@ export const getAllEmails = internalQuery({
         // Filtre uniquement les utilisateurs avec un email valide
         const emails = users
             .filter((user) => user.email && user.email.length > 0)
+            .map((user) => user.email as string);
+
+        return emails;
+    },
+});
+
+// ============================================================================
+// QUERY INTERNE : Récupérer les emails des utilisateurs avec remainingGenerations === 1
+// Ces utilisateurs n'ont pas encore utilisé leur génération gratuite
+// ============================================================================
+
+export const getEmailsWithRemainingGeneration = internalQuery({
+    args: {},
+    handler: async (ctx): Promise<string[]> => {
+        const users = await ctx.db.query("users").collect();
+
+        // Filtre les utilisateurs avec email valide ET remainingGenerations === 1
+        const emails = users
+            .filter((user) =>
+                user.email &&
+                user.email.length > 0 &&
+                user.remainingGenerations === 1
+            )
             .map((user) => user.email as string);
 
         return emails;
