@@ -140,7 +140,8 @@ export default function ClarificationQuestions({
 
   return (
     <div
-      className="w-full max-w-xl bg-[#1e1e1e] border border-[#27272a] rounded-xl overflow-hidden transition-all duration-200 group/question"
+      className="w-full max-w-xl bg-[#1e1e1e] border border-[#27272a] rounded-xl overflow-hidden transition-all duration-200 group/question notranslate"
+      translate="no"
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
     >

@@ -48,7 +48,7 @@ export default function ThinkingBlock({ content, isComplete = false, isPaused = 
   if (isComplete && !hasContent) return null;
 
   return (
-    <div className="bg-[#1e1e1e] rounded-xl border border-[#27272a] overflow-hidden">
+    <div className="bg-[#1e1e1e] rounded-xl border border-[#27272a] overflow-hidden notranslate" translate="no">
       {/* Header */}
       <button
         onClick={() => hasContent && setIsOpen(!isOpen)}

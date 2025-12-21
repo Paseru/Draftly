@@ -29,7 +29,7 @@ export default function PlanReview({ screens, onApprove, onRequestRefine, isAppr
   }, [isApproved]);
 
   return (
-    <div className="w-full max-w-xl bg-[#1e1e1e] border border-[#27272a] rounded-xl overflow-hidden animate-in fade-in slide-in-from-bottom-2 duration-300">
+    <div className="w-full max-w-xl bg-[#1e1e1e] border border-[#27272a] rounded-xl overflow-hidden animate-in fade-in slide-in-from-bottom-2 duration-300 notranslate" translate="no">
       {/* Header - clickable when approved */}
       <div 
         onClick={() => isApproved && setIsExpanded(!isExpanded)}
