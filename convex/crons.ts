@@ -3,14 +3,14 @@ import { internal } from "./_generated/api";
 
 const crons = cronJobs();
 
-// Clean up stale queue entries daily at 3am UTC
+// Clean up stale queue entries every minute
 // This handles:
 // - Active slots that have been held for too long (browser crash, etc.)
 // - Waiting entries that have expired
 // - Completed entries that need to be removed
-crons.daily(
+crons.interval(
     "cleanup stale queue entries",
-    { hourUTC: 3, minuteUTC: 0 },
+    { minutes: 1 },
     internal.queue.cleanupStaleEntries
 );
 
